@@ -1,0 +1,125 @@
+processor:
+  name: token-transfer
+  type: origin
+  description: Extract and emit token transfer events from Stellar ledgers
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu
+  ref: main
+
+# Protocol buffer definitions
+proto:
+  source: github.com/withObsrvr/nebu/examples/processors/token-transfer/proto
+  package: token_transfer
+
+# Schema versioning
+schema:
+  version: v1
+  identifier: nebu.token_transfer.v1
+  documentation: https://github.com/withObsrvr/nebu/blob/main/examples/processors/token-transfer/README.md
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install token-transfer
+
+    # Basic usage - process a ledger range
+    token-transfer --start-ledger 60200000 --end-ledger 60200100
+
+    # Pipe from nebu fetch
+    nebu fetch 60200000 60200100 | token-transfer
+
+    # Quiet mode (no startup banner)
+    token-transfer -q --start-ledger 60200000 --end-ledger 60200100
+
+  examples: |
+    # Extract transfers from specific ledger range
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | jq
+
+    # Filter for specific transfer types
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.type == "transfer")'
+
+    # Count payment operations in a range
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.type == "payment")' | wc -l
+
+    # Use with USDC filter
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      usdc-filter | json-file-sink
+
+    # Use with amount filter
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      amount-filter --min 10000000 | json-file-sink
+
+    # Use with custom RPC endpoint
+    token-transfer --rpc-url https://rpc-pubnet.nodeswithobsrvr.co \
+      --start-ledger 60200000 --end-ledger 60200100
+
+    # Use with authentication
+    NEBU_RPC_AUTH="Api-Key YOUR_API_KEY" \
+      token-transfer --start-ledger 60200000 --end-ledger 60200100
+
+  extended_description: |
+    Token Transfer Origin Processor
+
+    This processor extracts token transfer events from Stellar ledgers and emits
+    structured events in a standardized format. It processes payment operations,
+    path payment operations, and other transfer-related operations.
+
+    **What it does:**
+    - Consumes Stellar ledger data from RPC endpoints
+    - Parses operations to identify token transfers
+    - Emits structured JSON events with schema versioning
+    - Supports both bounded and unbounded ranges
+    - Provides quiet mode for pipeline usage
+
+    **Event Types:**
+    - `payment`: Direct payment operations (Payment, PathPaymentStrictSend, PathPaymentStrictReceive)
+    - `transfer`: Soroban token transfer events
+    - `mint`: Token minting events
+    - `burn`: Token burning events
+    - `clawback`: Asset clawback operations
+
+    **Performance:**
+    - Processes ~100-200 ledgers/second (depending on transaction density)
+    - Memory usage: ~50-100MB for typical workloads
+    - Supports streaming (constant memory for unbounded ranges)
+
+    **Configuration:**
+    - `--start-ledger`: Starting ledger sequence (required)
+    - `--end-ledger`: Ending ledger sequence (optional, defaults to latest)
+    - `--rpc-url`: Custom RPC endpoint (defaults to public RPC)
+    - `--network`: Network passphrase (mainnet, testnet, or custom)
+    - `-q, --quiet`: Suppress startup banner
+
+    **Environment Variables:**
+    - `NEBU_RPC_URL`: RPC endpoint URL
+    - `NEBU_NETWORK`: Network passphrase
+    - `NEBU_RPC_AUTH`: Authorization header (e.g., "Api-Key XXX")
+
+    **Output Format:**
+    All events include schema versioning fields:
+    - `_schema`: Schema identifier (e.g., "nebu.token_transfer.v1")
+    - `_nebu_version`: Runtime version
+
+    **Dependencies:**
+    - Stellar Go SDK (github.com/stellar/go)
+    - Protocol Buffers (for internal event types)
+
+    **Limitations:**
+    - Requires access to Stellar RPC endpoint
+    - Historical data availability depends on RPC endpoint
+    - Some RPC endpoints require authentication for high request rates
+
+    **Best Practices:**
+    - Use quiet mode (`-q`) when piping to other processors
+    - For production workloads, use authenticated RPC endpoints
+    - Monitor RPC rate limits to avoid throttling
+    - Use bounded ranges for batch processing
+    - Use unbounded ranges for real-time streaming

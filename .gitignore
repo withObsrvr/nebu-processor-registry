@@ -1,0 +1,28 @@
+# Generated files
+PROCESSORS.md
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# Build artifacts
+*.exe
+*.so
+*.dylib
+*.dll
+
+# Test binaries
+*.test
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.iml
+
+# Logs
+*.log

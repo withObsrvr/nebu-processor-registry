@@ -1,0 +1,69 @@
+name: Validate Processor Submission
+
+on:
+  pull_request:
+    paths:
+      - 'processors/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install yq for YAML validation
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Find changed processor directories
+        id: changed-processors
+        run: |
+          # Get list of changed processor directories
+          changed_files=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          processors=$(echo "$changed_files" | grep '^processors/' | cut -d'/' -f2 | sort -u | grep -v '^\.template$' || true)
+
+          if [ -z "$processors" ]; then
+            echo "No processor changes detected"
+            echo "processors=" >> $GITHUB_OUTPUT
+          else
+            echo "Changed processors: $processors"
+            echo "processors=$(echo $processors | tr '\n' ' ')" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Validate processor submissions
+        if: steps.changed-processors.outputs.processors != ''
+        run: |
+          for processor in ${{ steps.changed-processors.outputs.processors }}; do
+            echo "Validating processor: $processor"
+            bash scripts/validate-processor.sh "processors/$processor"
+          done
+
+      - name: Build processors
+        if: steps.changed-processors.outputs.processors != ''
+        run: |
+          for processor in ${{ steps.changed-processors.outputs.processors }}; do
+            echo "Building processor: $processor"
+            bash scripts/build-processor.sh "processors/$processor"
+          done
+
+      - name: Generate processor list
+        run: bash scripts/generate-list.sh
+
+      - name: Comment on PR
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ Processor validation failed. Please check the workflow logs for details.'
+            })

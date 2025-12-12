@@ -1,0 +1,60 @@
+# Template for processor description
+# Copy this file to processors/<your-processor-name>/description.yml and fill in the details
+
+processor:
+  name: my-processor-name
+  type: origin  # origin, transform, or sink
+  description: One-line description of what your processor does
+  version: 1.0.0
+  language: Go
+  license: MIT  # or Apache-2.0, BSD-3-Clause, etc.
+  maintainers:
+    - your-github-username
+
+repo:
+  github: your-username/your-processor-repo
+  ref: v1.0.0  # Git tag, branch, or commit SHA (prefer tags for stability)
+
+# Optional: Protocol buffer definitions (if your processor defines custom event types)
+proto:
+  source: github.com/your-username/your-processor-repo/proto
+  package: your_processor_package
+
+# Optional: Schema versioning (for JSON output compatibility)
+schema:
+  version: v1
+  identifier: nebu.your_processor.v1
+  documentation: https://github.com/your-username/your-processor-repo/blob/main/SCHEMA.md
+
+# Documentation
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install my-processor-name
+
+    # Basic usage
+    my-processor-name --help
+
+  examples: |
+    # Example for origin processor
+    my-processor-name --start-ledger 60200000 --end-ledger 60200100
+
+    # Example for transform processor
+    token-transfer | my-processor-name --option value | json-file-sink
+
+    # Example for sink processor
+    token-transfer | my-processor-name --db connection-string
+
+  extended_description: |
+    Detailed description of your processor.
+
+    What problem does it solve?
+    How does it work internally?
+    What are the performance characteristics?
+    What are the dependencies?
+
+    Include any important notes about:
+    - Configuration options
+    - Resource requirements
+    - Limitations
+    - Best practices
