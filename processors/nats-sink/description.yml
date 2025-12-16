@@ -1,0 +1,203 @@
+processor:
+  name: nats-sink
+  type: sink
+  description: Publish JSON events to NATS message bus for real-time distribution
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install nats-sink
+
+    # Publish to NATS (assumes NATS running on localhost:4222)
+    token-transfer --start-ledger 60200000 --follow | \
+      nats-sink --subject "stellar.transfers"
+
+  examples: |
+    # Publish live USDC transfers
+    token-transfer --start-ledger 60200000 --follow | \
+      usdc-filter | \
+      nats-sink --subject "stellar.usdc.transfers"
+
+    # Dynamic routing by asset code
+    token-transfer --start-ledger 60200000 --follow | \
+      nats-sink --subject "stellar.{transfer.assetCode}"
+
+    # Dynamic routing by event type
+    token-transfer --start-ledger 60200000 --follow | \
+      jq -c '{type: (if .transfer then "transfer" elif .mint then "mint" else "other" end), data: .}' | \
+      nats-sink --subject "stellar.{type}"
+
+    # JetStream for reliable delivery
+    token-transfer --start-ledger 60200000 --follow | \
+      usdc-filter | \
+      nats-sink --subject "stellar.usdc" --jetstream
+
+    # Custom NATS server
+    token-transfer --start-ledger 60200000 --follow | \
+      nats-sink --url "nats://nats.example.com:4222" --subject "events"
+
+    # With authentication
+    NATS_CREDS=/path/to/user.creds \
+      token-transfer --start-ledger 60200000 --follow | \
+      nats-sink --subject "stellar.transfers" --jetstream
+
+  extended_description: |
+    NATS Sink Processor
+
+    Publishes nebu events to NATS message bus for real-time distribution to multiple
+    consumers. Supports dynamic subject routing using template variables, JetStream
+    for reliable delivery, and graceful reconnection handling.
+
+    **What it does:**
+    - Reads JSON events from stdin
+    - Connects to NATS server (lazy connection on first event)
+    - Resolves subject names using template variables
+    - Publishes events to NATS subjects
+    - Flushes on graceful shutdown
+
+    **Subject Templates:**
+    Use `{field.path}` syntax for dynamic routing:
+    - Static: `--subject "stellar.transfers"`
+    - Top-level field: `--subject "stellar.{type}"`
+    - Nested field: `--subject "stellar.{transfer.assetCode}"`
+    - Multiple variables: `--subject "stellar.{type}.{transfer.assetCode}"`
+
+    **Template Resolution:**
+    - Dots in values are sanitized to underscores (prevents subject hierarchy issues)
+    - Missing fields default to `_unknown` (or fail with `--strict`)
+    - Examples:
+      - `{transfer.assetCode}` with USDC → `stellar.USDC`
+      - `{transfer.assetCode}` with "Funny.Token" → `stellar.Funny_Token`
+
+    **Configuration:**
+    - `--url <url>`: NATS server URL (default: nats://localhost:4222, or NATS_URL env)
+    - `--subject <template>`: Subject template (default: "events")
+    - `--jetstream`: Use JetStream for reliable delivery (default: false)
+    - `--creds <file>`: Path to NATS credentials file (or NATS_CREDS env)
+    - `--name <name>`: Connection name for monitoring (default: "nats-sink")
+    - `--timeout <seconds>`: Connection timeout (default: 5)
+    - `--strict`: Fail on missing template variables (default: use "_unknown")
+    - `-q, --quiet`: Suppress startup banner
+
+    **Environment Variables:**
+    - `NATS_URL`: NATS server URL
+    - `NATS_CREDS`: Path to credentials file
+
+    **NATS Core vs JetStream:**
+
+    **NATS Core** (default):
+    - Fire-and-forget delivery
+    - No persistence
+    - Minimal overhead
+    - Best for: Real-time alerts, dashboards, ephemeral data
+
+    **JetStream** (`--jetstream`):
+    - At-least-once delivery
+    - Message persistence
+    - Stream replay capability
+    - Best for: Critical events, audit logs, event sourcing
+
+    **Resilience:**
+    - Auto-reconnects on network issues (unlimited retries)
+    - Graceful shutdown with message flush
+    - Signal handling (Ctrl+C)
+    - Connection state monitoring
+
+    **Performance:**
+    - ~10,000-100,000 msgs/second (Core NATS)
+    - ~5,000-50,000 msgs/second (JetStream)
+    - Async publishing (non-blocking)
+    - Minimal memory overhead
+
+    **Use Cases:**
+    - Real-time dashboards and monitoring
+    - Multi-consumer event distribution
+    - Microservices integration
+    - Alert systems
+    - Event-driven architectures
+    - Analytics pipelines
+
+    **Best Practices:**
+    - Use JetStream for critical events that must not be lost
+    - Use Core NATS for high-volume, ephemeral data
+    - Sanitize subject names (nats-sink does this automatically)
+    - Use hierarchical subjects for flexible subscriptions
+    - Enable credentials for production deployments
+    - Monitor connection status with `--name` for debugging
+
+    **Example Workflows:**
+
+    1. **Real-time whale tracker:**
+    ```bash
+    token-transfer --start-ledger 60200000 --follow | \
+      amount-filter --min 1000000000 | \
+      time-window --last 1h | \
+      nats-sink --subject "alerts.whales" --jetstream
+    ```
+
+    2. **Multi-asset routing:**
+    ```bash
+    # Publish each asset to its own subject
+    token-transfer --start-ledger 60200000 --follow | \
+      nats-sink --subject "stellar.{transfer.assetCode}"
+
+    # Consumers can subscribe selectively:
+    # nats sub "stellar.USDC"     # Only USDC
+    # nats sub "stellar.*"        # All assets
+    # nats sub "stellar.>"        # All under stellar hierarchy
+    ```
+
+    3. **Event-driven architecture:**
+    ```bash
+    # Producer: nebu pipeline
+    contract-events --start-ledger 60200000 --follow | \
+      nats-sink --subject "contracts.{eventType}" --jetstream
+
+    # Consumer 1: Index transfers
+    nats sub "contracts.transfer" | postgres-sink --table transfers
+
+    # Consumer 2: Alert on mints
+    nats sub "contracts.mint" | jq 'select(.amount > 1000000)' | alert-service
+    ```
+
+    **NATS Subject Hierarchy:**
+    ```
+    stellar                           # Root
+    ├── transfers                     # All transfers
+    ├── usdc.transfers                # USDC only
+    ├── {assetCode}                   # Per-asset
+    │   ├── USDC
+    │   ├── AQUA
+    │   └── yXLM
+    └── contracts                     # Contract events
+        ├── transfer
+        ├── mint
+        └── burn
+    ```
+
+    **Limitations:**
+    - Requires external NATS server
+    - JetStream requires NATS 2.2+
+    - Template variables limited to dot-notation paths
+    - No built-in batching (each event is one message)
+    - Subject sanitization may change field values (dots → underscores)
+
+    **Dependencies:**
+    - NATS server (Core or JetStream)
+    - Optional: NATS credentials for authentication
+    - Go NATS client library
+
+    **Security:**
+    - Use credentials files for authentication
+    - Enable TLS for production (configure NATS server)
+    - Restrict subject permissions via NATS authorization
+    - Never commit credentials to version control

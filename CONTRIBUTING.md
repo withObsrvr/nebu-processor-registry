@@ -2,20 +2,41 @@
 
 Thank you for contributing to the nebu community processor registry! This guide will help you submit your processor.
 
+**New to building processors?** See [BUILDING_PROTO_PROCESSORS.md](BUILDING_PROTO_PROCESSORS.md) for a comprehensive guide to building protobuf-first processors for Stellar.
+
 ## Submission Process
 
 ### 1. Prepare Your Processor
 
 Your processor must meet these requirements:
 
-#### Repository Structure
+#### Repository Structure (Proto-First Origin Processors)
 
-Your processor repository should have:
+For origin processors, use the **protobuf-first** approach:
 
 ```
 my-processor/
-├── cmd/main.go           # Standalone CLI binary (Go)
-├── processor.go          # Processor implementation
+├── proto/
+│   ├── my_processor.proto      # Protobuf schema definition
+│   └── my_processor.pb.go      # Generated Go code
+├── my_processor.go             # Processor implementation
+├── cmd/my-processor/
+│   └── main.go                 # CLI wrapper with RunProtoOriginCLI
+├── go.mod                      # Go module
+├── README.md                   # Documentation
+└── *_test.go                   # Tests
+```
+
+**See the guide**: [BUILDING_PROTO_PROCESSORS.md](BUILDING_PROTO_PROCESSORS.md) for step-by-step instructions.
+
+#### Repository Structure (Transform/Sink Processors)
+
+For transform and sink processors:
+
+```
+my-processor/
+├── cmd/my-processor/
+│   └── main.go           # Standalone CLI binary (Go)
 ├── go.mod                # Go module (if Go)
 ├── README.md             # Documentation
 └── *_test.go             # Tests
@@ -23,15 +44,31 @@ my-processor/
 
 #### Processor Requirements
 
-- ✅ Implements nebu processor interface (Origin, Transform, or Sink)
+**All Processors:**
 - ✅ Builds as standalone CLI binary
-- ✅ Accepts input via stdin (for Transform/Sink) or flags (for Origin)
 - ✅ Outputs newline-delimited JSON to stdout
 - ✅ Includes `_schema` and `_nebu_version` fields in output
 - ✅ Supports `-q/--quiet` flag for pipeline usage
 - ✅ Has comprehensive README with usage examples
 - ✅ Includes tests
 - ✅ Uses semantic versioning (Git tags)
+
+**Origin Processors (MUST use protobuf-first):**
+- ✅ Defines protobuf schema in `.proto` file
+- ✅ Uses `RunProtoOriginCLI` wrapper
+- ✅ Implements `ProcessLedger(ctx, ledger) error`
+- ✅ Emits strongly-typed protobuf messages
+- ✅ See [BUILDING_PROTO_PROCESSORS.md](BUILDING_PROTO_PROCESSORS.md)
+
+**Transform Processors:**
+- ✅ Reads JSON from stdin, writes JSON to stdout
+- ✅ Uses `RunTransformCLI` wrapper
+- ✅ Preserves schema versioning fields
+
+**Sink Processors:**
+- ✅ Reads JSON from stdin
+- ✅ Uses `RunSinkCLI` wrapper
+- ✅ Handles errors gracefully
 
 ### 2. Create description.yml
 
@@ -118,11 +155,22 @@ If validation fails, check the workflow logs and fix any issues.
 
 ## Best Practices
 
+### Building Protobuf-First Processors
+
+**For origin processors**, always use the protobuf-first approach. See our comprehensive guide:
+
+📖 **[BUILDING_PROTO_PROCESSORS.md](BUILDING_PROTO_PROCESSORS.md)** - Complete tutorial with:
+- Why proto-first for Stellar processors
+- Step-by-step walkthrough
+- XDR → Protobuf conversion patterns
+- Real-world examples
+- Troubleshooting
+
 ### Naming Conventions
 
-- **Origin processors**: Describe what they extract (e.g., `token-transfer`, `soroban-events`)
+- **Origin processors**: Describe what they extract (e.g., `token-transfer`, `contract-events`, `contract-invocation`)
 - **Transform processors**: Describe the transformation (e.g., `usdc-filter`, `dedup`, `time-window`)
-- **Sink processors**: Describe the destination (e.g., `json-file-sink`, `duckdb-sink`, `postgres-sink`)
+- **Sink processors**: Describe the destination (e.g., `json-file-sink`, `nats-sink`, `postgres-sink`)
 
 ### Versioning
 
@@ -185,31 +233,71 @@ nebu fetch 60200000 60200100 | ./my-processor | jq
 
 Extract structured events from raw Stellar ledger data.
 
+**IMPORTANT:** Origin processors MUST use the **protobuf-first** approach. This ensures:
+- Type safety via protobuf schemas
+- Consistency across processors
+- Automatic JSON conversion via protojson
+- Future gRPC support for flowctl integration
+
 **Requirements:**
+- Defines events in `.proto file`
+- Uses `RunProtoOriginCLI` wrapper
+- Implements `ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error`
 - Accepts `--start-ledger` and `--end-ledger` flags
 - Connects to RPC endpoint (supports `--rpc-url` flag)
-- Outputs newline-delimited JSON events
+- Outputs newline-delimited JSON events (auto-converted from protobuf)
 - Supports streaming (unbounded ranges)
 
-**Example:**
-```go
-type MyOrigin struct{}
+**Quick Example:**
 
-func (o *MyOrigin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
-    // Extract events from ledger
-    for _, tx := range ledger.TransactionsWithoutMeta() {
-        // ... process transactions
-        event := map[string]interface{}{
-            "_schema": "nebu.my_processor.v1",
-            "_nebu_version": "1.0.0",
-            "type": "my_event",
-            // ... event data
+See [BUILDING_PROTO_PROCESSORS.md](BUILDING_PROTO_PROCESSORS.md) for complete tutorial. Here's the minimal structure:
+
+```protobuf
+// proto/my_event.proto
+syntax = "proto3";
+package my_processor;
+
+message MyEvent {
+  string event_type = 1;
+  Metadata meta = 2;
+}
+
+message Metadata {
+  uint32 ledger_sequence = 1;
+  string tx_hash = 2;
+  // ... standard metadata fields
+}
+```
+
+```go
+// my_processor.go
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+    events := o.extractEvents(ledger)  // Returns []*proto.MyEvent
+
+    for _, event := range events {
+        select {
+        case <-ctx.Done():
+            return ctx.Err()
+        case o.out <- event:  // Send proto message
         }
-        json.NewEncoder(os.Stdout).Encode(event)
     }
     return nil
 }
 ```
+
+```go
+// cmd/my-processor/main.go
+func main() {
+    cli.RunProtoOriginCLI(config, func(networkPass string) cli.ProtoOriginProcessor[*proto.MyEvent] {
+        return NewOrigin(networkPass)
+    })
+}
+```
+
+**Real Examples:**
+- [token-transfer](https://github.com/withObsrvr/nebu/tree/main/examples/processors/token-transfer)
+- [contract-events](https://github.com/withObsrvr/nebu/tree/main/examples/processors/contract-events)
+- [contract-invocation](https://github.com/withObsrvr/nebu/tree/main/examples/processors/contract-invocation)
 
 ### Transform Processors
 
@@ -219,24 +307,40 @@ Filter, aggregate, or transform event streams.
 - Reads newline-delimited JSON from stdin
 - Writes newline-delimited JSON to stdout
 - Preserves `_schema` and `_nebu_version` fields
-- Supports `--quiet` flag
+- Uses `RunTransformCLI` wrapper from nebu/pkg/processor/cli
 
 **Example:**
 ```go
-func main() {
-    scanner := bufio.NewScanner(os.Stdin)
-    for scanner.Scan() {
-        var event map[string]interface{}
-        json.Unmarshal(scanner.Bytes(), &event)
+package main
 
-        // Transform event
-        if shouldKeep(event) {
-            transformed := transform(event)
-            json.NewEncoder(os.Stdout).Encode(transformed)
-        }
-    }
+import (
+	"github.com/withObsrvr/nebu/pkg/processor/cli"
+)
+
+func main() {
+	config := cli.TransformConfig{
+		Name:        "my-filter",
+		Description: "Filter events based on criteria",
+		Version:     "1.0.0",
+	}
+
+	cli.RunTransformCLI(config, filterFunc, nil)
+}
+
+// Return event to keep, nil to filter out
+func filterFunc(event map[string]interface{}) map[string]interface{} {
+	if shouldKeep(event) {
+		return event
+	}
+	return nil
 }
 ```
+
+**Real Examples:**
+- [usdc-filter](https://github.com/withObsrvr/nebu/tree/main/examples/processors/usdc-filter)
+- [amount-filter](https://github.com/withObsrvr/nebu/tree/main/examples/processors/amount-filter)
+- [dedup](https://github.com/withObsrvr/nebu/tree/main/examples/processors/dedup)
+- [time-window](https://github.com/withObsrvr/nebu/tree/main/examples/processors/time-window)
 
 ### Sink Processors
 
@@ -244,28 +348,50 @@ Write events to external systems (databases, files, APIs).
 
 **Requirements:**
 - Reads newline-delimited JSON from stdin
-- Writes to configured destination
+- Uses `RunSinkCLI` wrapper from nebu/pkg/processor/cli
 - Handles connection errors gracefully
-- Supports batch writes (for performance)
+- Supports batch writes (recommended for performance)
 
 **Example:**
 ```go
+package main
+
+import (
+	"github.com/withObsrvr/nebu/pkg/processor/cli"
+)
+
+var db *sql.DB  // Lazy initialized
+
 func main() {
-    db := connectToDB()
-    defer db.Close()
+	config := cli.SinkConfig{
+		Name:        "my-sink",
+		Description: "Write events to database",
+		Version:     "1.0.0",
+	}
 
-    scanner := bufio.NewScanner(os.Stdin)
-    for scanner.Scan() {
-        var event map[string]interface{}
-        json.Unmarshal(scanner.Bytes(), &event)
+	cli.RunSinkCLI(config, sinkFunc, addFlags)
+}
 
-        // Write to database
-        if err := db.Insert(event); err != nil {
-            log.Printf("Failed to insert: %v", err)
-        }
-    }
+// Return error to stop processing
+func sinkFunc(event map[string]interface{}) error {
+	// Lazy connect on first event
+	if db == nil {
+		var err error
+		db, err = connectToDB()
+		if err != nil {
+			return err
+		}
+	}
+
+	// Write to database
+	return db.Insert(event)
 }
 ```
+
+**Real Examples:**
+- [json-file-sink](https://github.com/withObsrvr/nebu/tree/main/examples/processors/json-file-sink)
+- [nats-sink](https://github.com/withObsrvr/nebu/tree/main/examples/processors/nats-sink)
+- [postgres-sink](https://github.com/withObsrvr/nebu/tree/main/examples/processors/postgres-sink)
 
 ## Maintenance
 

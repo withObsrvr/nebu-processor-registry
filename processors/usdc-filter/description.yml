@@ -1,0 +1,62 @@
+processor:
+  name: usdc-filter
+  type: transform
+  description: Filter token transfer events for USDC only
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install usdc-filter
+
+    # Use in pipeline
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | usdc-filter
+
+  examples: |
+    # Filter for USDC transfers only
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      usdc-filter | \
+      json-file-sink --out usdc-transfers.jsonl
+
+    # Pipe to DuckDB for analytics
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      usdc-filter | \
+      duckdb -c "SELECT COUNT(*) FROM read_json('/dev/stdin')"
+
+    # Quiet mode
+    token-transfer -q --start-ledger 60200000 | \
+      usdc-filter -q | \
+      nats-sink --subject "usdc.transfers"
+
+  extended_description: |
+    USDC Filter Transform Processor
+
+    A simple transform processor that filters token transfer events to only pass
+    through USDC (USD Coin) transfers. Part of a composable Unix-style pipeline.
+
+    **What it does:**
+    - Reads JSON events from stdin (from token-transfer processor)
+    - Filters for events where asset code is "USDC"
+    - Writes filtered events to stdout
+    - Preserves all event metadata and schema versioning
+
+    **Configuration:**
+    - `-q, --quiet`: Suppress startup banner
+
+    **Use Cases:**
+    - Track USDC transfers specifically
+    - Reduce data volume for downstream processors
+    - Build USDC-specific analytics pipelines
+
+    **Best Practices:**
+    - Always pipe from token-transfer or similar origin processor
+    - Use quiet mode when piping to other processors
+    - Combine with amount-filter to track large USDC transfers

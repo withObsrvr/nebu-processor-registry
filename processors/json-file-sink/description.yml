@@ -1,0 +1,156 @@
+processor:
+  name: json-file-sink
+  type: sink
+  description: Write JSON events to a JSONL file (one event per line)
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install json-file-sink
+
+    # Basic usage
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      json-file-sink --out transfers.jsonl
+
+  examples: |
+    # Save USDC transfers to file
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      usdc-filter | \
+      json-file-sink --out usdc-transfers.jsonl
+
+    # Build historical dataset
+    token-transfer --start-ledger 60000000 --end-ledger 60200000 | \
+      amount-filter --min 10000000 | \
+      dedup --key meta.txHash | \
+      json-file-sink --out large-transfers.jsonl
+
+    # Collect contract events
+    contract-events --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.eventType == "transfer")' | \
+      json-file-sink --out token-transfers.jsonl
+
+    # Quiet mode (no banner)
+    token-transfer -q --start-ledger 60200000 --end-ledger 60200100 | \
+      usdc-filter -q | \
+      json-file-sink -q --out data.jsonl
+
+  extended_description: |
+    JSON File Sink Processor
+
+    A simple, reliable sink that writes JSON events to a JSONL (JSON Lines) file.
+    Each event is written as a single line, making the output easy to process with
+    standard Unix tools like grep, awk, and jq.
+
+    **What it does:**
+    - Reads JSON events from stdin
+    - Writes each event as a single line to output file
+    - Creates file on first event
+    - Flushes after each write for reliability
+    - Preserves all event fields and schema versioning
+
+    **Output Format:**
+    JSONL (JSON Lines) - one JSON object per line:
+    ```
+    {"transfer":{"from":"GA...","to":"GB...","amount":"1000000"},"meta":{...}}
+    {"transfer":{"from":"GC...","to":"GD...","amount":"2000000"},"meta":{...}}
+    ```
+
+    This format is ideal for:
+    - Streaming processing with Unix tools
+    - Loading into databases (PostgreSQL COPY, DuckDB)
+    - Incremental appends
+    - Line-based diff and grep
+
+    **Configuration:**
+    - `--out <file>`: Output file path (default: events.jsonl)
+    - `-q, --quiet`: Suppress startup banner
+
+    **File Handling:**
+    - Creates file if it doesn't exist
+    - **Overwrites file if it exists** (not append mode)
+    - Flushes after each event for crash safety
+    - Writes to stderr on errors (doesn't corrupt output file)
+
+    **Performance:**
+    - Minimal overhead (buffered I/O)
+    - ~10,000-50,000 events/second (depends on disk)
+    - Suitable for large historical backfills
+
+    **Use Cases:**
+    - Build local datasets for analysis
+    - Cache processed events
+    - Archive historical data
+    - Export for external tools (Python, R, Excel)
+    - Development and debugging
+
+    **Reliability:**
+    - Automatic flush after each write
+    - Safe for long-running pipelines
+    - Handles interrupts gracefully (Ctrl+C)
+    - No data loss on crashes (up to last event)
+
+    **Best Practices:**
+    - Use `.jsonl` extension to indicate JSON Lines format
+    - Process large files with `jq -c` for compact output
+    - Load into DuckDB for SQL analytics
+    - Use quiet mode when chaining multiple processors
+
+    **Example Workflows:**
+
+    1. **Build analytics dataset:**
+    ```bash
+    token-transfer --start-ledger 60000000 --end-ledger 60200000 | \
+      usdc-filter | \
+      json-file-sink --out usdc-history.jsonl
+
+    # Analyze with DuckDB
+    duckdb -c "SELECT DATE(meta.timestamp) as day, SUM(transfer.amount) as volume
+                FROM read_json_auto('usdc-history.jsonl')
+                GROUP BY day ORDER BY day"
+    ```
+
+    2. **Cache for multiple analysis:**
+    ```bash
+    # Fetch once
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      json-file-sink --out events.jsonl
+
+    # Analyze multiple ways
+    cat events.jsonl | jq 'select(.transfer.amount > 10000000)'
+    cat events.jsonl | jq '.meta.contractAddress' | sort | uniq -c
+    ```
+
+    **Limitations:**
+    - Overwrites existing files (not append mode)
+    - No compression (use gzip for storage)
+    - Single file output (no file rotation)
+    - No built-in deduplication (use dedup processor first)
+
+    **Advanced Usage:**
+
+    Combine with gzip for compression:
+    ```bash
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      json-file-sink --out /dev/stdout | \
+      gzip > transfers.jsonl.gz
+    ```
+
+    Split into multiple files:
+    ```bash
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      jq -c 'select(.transfer.assetCode == "USDC")' | \
+      json-file-sink --out usdc.jsonl &
+
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      jq -c 'select(.transfer.assetCode != "USDC")' | \
+      json-file-sink --out other.jsonl
+    ```

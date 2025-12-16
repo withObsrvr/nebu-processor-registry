@@ -1,0 +1,79 @@
+processor:
+  name: dedup
+  type: transform
+  description: Deduplicate events based on a specified key field
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install dedup
+
+    # Deduplicate by transaction hash
+    token-transfer --start-ledger 60200000 | dedup --key meta.txHash
+
+  examples: |
+    # Avoid processing duplicate transfers
+    token-transfer --start-ledger 60200000 --follow | \
+      usdc-filter | \
+      dedup --key meta.txHash | \
+      postgres-sink --table usdc_transfers
+
+    # Deduplicate contract events by event ID
+    contract-events --start-ledger 60200000 | \
+      dedup --key eventId | \
+      json-file-sink
+
+    # Track unique accounts
+    token-transfer --start-ledger 60200000 | \
+      jq -c '{account: .transfer.from}' | \
+      dedup --key account
+
+  extended_description: |
+    Dedup Transform Processor
+
+    Removes duplicate events from a stream based on a specified JSON path key.
+    Maintains an in-memory set of seen keys, emitting only the first occurrence
+    of each unique key.
+
+    **What it does:**
+    - Reads JSON events from stdin
+    - Extracts the specified key from each event
+    - Tracks seen keys in-memory
+    - Emits only events with unseen keys
+    - Preserves event order
+
+    **Configuration:**
+    - `--key`: JSON path to use for deduplication (e.g., "meta.txHash", "id")
+    - `-q, --quiet`: Suppress startup banner
+
+    **Key Path Syntax:**
+    - Simple field: `id`
+    - Nested field: `meta.txHash`
+    - Array index: `arguments[0]`
+
+    **Use Cases:**
+    - Remove duplicate events from unreliable streams
+    - Track unique transaction hashes
+    - Filter for first occurrence of contract calls
+    - Ensure exactly-once processing
+
+    **Memory Considerations:**
+    - Stores all seen keys in memory (one string per unique key)
+    - For long-running streams, memory grows with unique key count
+    - Consider restarting periodically for unbounded streams
+    - For bounded ranges, memory is released after completion
+
+    **Best Practices:**
+    - Choose a stable, unique key (like transaction hash)
+    - Use for short-to-medium lived streams
+    - For long-term deduplication, consider using a database-backed solution
+    - Combine with time-window for time-based deduplication

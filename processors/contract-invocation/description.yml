@@ -1,0 +1,153 @@
+processor:
+  name: contract-invocation
+  type: origin
+  description: Extract and decode Soroban contract invocations from Stellar ledgers
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu
+  ref: main
+
+# Protocol buffer definitions
+proto:
+  source: github.com/withObsrvr/nebu/examples/processors/contract-invocation/proto
+  package: contract_invocation
+
+# Schema versioning
+schema:
+  version: v1
+  identifier: nebu.contract_invocation.v1
+  documentation: https://github.com/withObsrvr/nebu/blob/main/examples/processors/contract-invocation/README.md
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install contract-invocation
+
+    # Basic usage - process a ledger range
+    contract-invocation --start-ledger 60200000 --end-ledger 60200100
+
+    # Pipe from nebu fetch
+    nebu fetch 60200000 60200100 | contract-invocation
+
+    # Quiet mode
+    contract-invocation -q --start-ledger 60200000 --end-ledger 60200100
+
+  examples: |
+    # Extract all contract invocations
+    contract-invocation --start-ledger 60200000 --end-ledger 60200100 | jq
+
+    # Filter for specific function name
+    contract-invocation --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.functionName == "transfer")'
+
+    # Filter for specific contract
+    contract-invocation --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.contractId == "CA...")'
+
+    # Count invocations by function
+    contract-invocation --start-ledger 60200000 --end-ledger 60200100 | \
+      jq -r '.functionName' | sort | uniq -c
+
+    # Extract only successful invocations
+    contract-invocation --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.successful == true)'
+
+    # Analyze state changes per invocation
+    contract-invocation --start-ledger 60200000 --end-ledger 60200100 | \
+      jq '{function: .functionName, stateChanges: (.stateChanges | length)}'
+
+    # Use with authentication
+    NEBU_RPC_AUTH="Api-Key YOUR_API_KEY" \
+      contract-invocation --start-ledger 60200000 --end-ledger 60200100
+
+  extended_description: |
+    Contract Invocation Origin Processor
+
+    This processor extracts and decodes Soroban contract function invocations from
+    Stellar ledgers, providing detailed information about function calls, arguments,
+    state changes, and diagnostic events. Essential for analyzing contract behavior
+    and building contract analytics dashboards.
+
+    **What it does:**
+    - Consumes Stellar ledger data from RPC endpoints
+    - Extracts all contract function invocations from Soroban transactions
+    - Decodes function names and arguments from XDR to JSON
+    - Captures state changes (ledger entry modifications)
+    - Captures diagnostic events (debug output)
+    - Tracks invocation success/failure
+    - Emits structured JSON events with schema versioning
+
+    **Event Structure:**
+    Each invocation includes:
+    - `contractId`: The contract being invoked
+    - `functionName`: The function being called
+    - `arguments`: Decoded function arguments (as ScVal JSON)
+    - `invokingAccount`: The account that initiated the invocation
+    - `successful`: Whether the invocation succeeded
+    - `stateChanges`: Array of ledger entry modifications
+    - `diagnosticEvents`: Debug events emitted during execution
+    - `meta`: Transaction metadata (ledger, hash, indexes, timestamp)
+
+    **Performance:**
+    - Processes ~50-100 ledgers/second (depends on contract activity)
+    - Memory usage: ~100-300MB (includes full state change data)
+    - Supports streaming for unbounded ranges
+
+    **Configuration:**
+    - `--start-ledger`: Starting ledger sequence (required)
+    - `--end-ledger`: Ending ledger sequence (optional)
+    - `--rpc-url`: Custom RPC endpoint
+    - `--network`: Network passphrase (mainnet, testnet, or custom)
+    - `-q, --quiet`: Suppress startup banner
+
+    **Environment Variables:**
+    - `NEBU_RPC_URL`: RPC endpoint URL
+    - `NEBU_NETWORK`: Network passphrase
+    - `NEBU_RPC_AUTH`: Authorization header
+
+    **Output Format:**
+    All events include schema versioning:
+    - `_schema`: "nebu.contract_invocation.v1"
+    - `_nebu_version`: Runtime version
+
+    **Use Cases:**
+    - Analyze contract function call patterns
+    - Track specific contract interactions
+    - Build contract analytics dashboards
+    - Debug contract behavior with diagnostic events
+    - Monitor state changes from contract calls
+    - Extract custom business logic from specific functions
+
+    **Example: Extract custom fields with jq**
+    ```bash
+    # Extract specific arguments from a function call
+    contract-invocation --start-ledger 60200000 --end-ledger 60200001 | \
+      jq 'select(.functionName == "sink_carbon") | {
+        funder: .arguments[0].addressValue,
+        recipient: .arguments[1].addressValue,
+        amount: .arguments[2].u128Value,
+        project: .arguments[3].stringValue
+      }'
+    ```
+
+    **Dependencies:**
+    - Stellar Go SDK (github.com/stellar/go)
+    - Protocol Buffers for event types
+
+    **Limitations:**
+    - Requires Stellar RPC endpoint with Soroban support
+    - Argument decoding is best-effort (complex types may need manual parsing)
+    - State changes include full ledger entry data (can be verbose)
+    - Diagnostic events only available on failed transactions or debug mode
+
+    **Best Practices:**
+    - Use quiet mode (`-q`) when piping to other processors
+    - Filter for specific contracts/functions early to reduce data volume
+    - Use authenticated RPC endpoints for production
+    - Pipe to postgres-sink for queryable invocation history
+    - Use jq to extract custom fields for business logic

@@ -1,0 +1,269 @@
+processor:
+  name: postgres-sink
+  type: sink
+  description: Store events in PostgreSQL with JSONB schema and automatic TOID generation
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install postgres-sink
+
+    # Store events in PostgreSQL
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      postgres-sink --dsn "postgres://user:pass@localhost/db?sslmode=disable"
+
+  examples: |
+    # Store USDC transfers
+    token-transfer --start-ledger 60200000 --follow | \
+      usdc-filter | \
+      postgres-sink --dsn "postgres://user:pass@localhost/db" --table usdc_transfers
+
+    # Custom table with conflict handling
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      postgres-sink --dsn "$POSTGRES_DSN" \
+                    --table transfers \
+                    --conflict update
+
+    # Store contract events
+    contract-events --start-ledger 60200000 --follow | \
+      postgres-sink --dsn "$POSTGRES_DSN" --table contract_events
+
+    # Use environment variable for credentials
+    export POSTGRES_DSN="postgres://user:pass@localhost/db?sslmode=disable"
+    token-transfer --start-ledger 60200000 --follow | \
+      postgres-sink --table stellar_transfers
+
+    # Batched inserts for performance
+    token-transfer --start-ledger 60200000 --end-ledger 60300000 | \
+      postgres-sink --dsn "$POSTGRES_DSN" \
+                    --table transfers \
+                    --batch-size 5000
+
+  extended_description: |
+    PostgreSQL Sink Processor
+
+    Stores nebu events in PostgreSQL using flexible JSONB schema with automatic TOID
+    (Total Order ID) generation for idempotent inserts. Provides batched writes for
+    high performance and automatic table creation with optimized indexes.
+
+    **What it does:**
+    - Reads JSON events from stdin
+    - Generates TOIDs for unique event identification
+    - Batches events for efficient bulk inserts
+    - Creates tables and indexes automatically
+    - Supports upsert semantics (ignore or update on conflict)
+    - Flushes on graceful shutdown
+
+    **Table Schema:**
+    ```sql
+    CREATE TABLE events (
+      id BIGINT PRIMARY KEY,              -- TOID (Total Order ID)
+      event_type TEXT,                     -- Extracted event type
+      data JSONB NOT NULL,                 -- Full event data
+      created_at TIMESTAMPTZ DEFAULT NOW() -- Insert timestamp
+    );
+
+    -- Indexes
+    CREATE INDEX idx_events_data ON events USING GIN (data);
+    CREATE INDEX idx_events_event_type ON events (event_type) WHERE event_type IS NOT NULL;
+    CREATE INDEX idx_events_created_at ON events (created_at);
+    ```
+
+    **TOID Generation:**
+    TOIDs (Total Order IDs) are SEP-35 compliant unique identifiers combining:
+    - Ledger sequence
+    - Transaction index
+    - Operation index
+
+    This provides:
+    - Guaranteed uniqueness per operation
+    - Natural sort order (chronological)
+    - Idempotent inserts (same event = same TOID)
+
+    **Event Type Extraction:**
+    Automatically detects event type from multiple formats:
+    - Token-transfer: `transfer`, `mint`, `burn`, `fee` (oneof fields)
+    - Contract-events: `eventType` field
+    - Contract-invocation: `functionName` field
+    - Custom jq: `event_type` or `type` field
+
+    **Configuration:**
+    - `--dsn <connection-string>`: PostgreSQL connection string (required, or POSTGRES_DSN env)
+    - `--table <name>`: Table name for storing events (default: "events")
+    - `--batch-size <n>`: Number of events to batch before insert (default: 1000)
+    - `--conflict <mode>`: Conflict resolution: "ignore" (default) or "update"
+    - `-q, --quiet`: Suppress startup banner
+
+    **Connection String Format:**
+    ```
+    postgres://username:password@host:port/database?sslmode=disable
+    ```
+
+    **Environment Variables:**
+    - `POSTGRES_DSN`: PostgreSQL connection string
+
+    **Conflict Modes:**
+
+    **ignore** (default):
+    - Silently skip duplicate TOIDs
+    - Best for: Backfilling, re-running pipelines
+    - Behavior: `ON CONFLICT (id) DO NOTHING`
+
+    **update**:
+    - Overwrite existing events with same TOID
+    - Best for: Mutable data, corrections
+    - Behavior: `ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data`
+
+    **Batching:**
+    - Events are buffered up to `--batch-size`
+    - Batch flushed when full or every 1 second
+    - Final flush on graceful shutdown (Ctrl+C)
+    - Trade-off: Higher batch-size = better throughput, higher latency
+
+    **Performance:**
+    - ~5,000-20,000 events/second (depends on batch size and network)
+    - Uses prepared statements for efficiency
+    - Connection pooling (max 25 connections)
+    - GIN indexes for fast JSONB queries
+
+    **Querying Data:**
+
+    1. **Full-text search:**
+    ```sql
+    SELECT * FROM events WHERE data @> '{"transfer": {"assetCode": "USDC"}}';
+    ```
+
+    2. **Extract fields:**
+    ```sql
+    SELECT
+      id,
+      data->>'meta'->>'ledgerSequence' as ledger,
+      data->'transfer'->>'amount' as amount
+    FROM events
+    WHERE event_type = 'transfer';
+    ```
+
+    3. **Create materialized views:**
+    ```sql
+    CREATE MATERIALIZED VIEW usdc_transfers AS
+    SELECT
+      id,
+      (data->'transfer'->>'from') as from_account,
+      (data->'transfer'->>'to') as to_account,
+      (data->'transfer'->>'amount')::bigint as amount,
+      created_at
+    FROM events
+    WHERE data->'transfer'->>'assetCode' = 'USDC';
+    ```
+
+    **Use Cases:**
+    - Build queryable event store
+    - Historical data warehouse
+    - Real-time analytics dashboards (with Hasura/GraphQL)
+    - Audit logs
+    - Event sourcing
+    - Materialized views for business logic
+
+    **Best Practices:**
+    - Use environment variables for credentials (never commit DSN)
+    - Set appropriate `--batch-size` (1000-5000 for backfills, 100-500 for real-time)
+    - Create custom indexes for your query patterns
+    - Use materialized views for complex analytics
+    - Enable connection pooling for high concurrency
+    - Use `--conflict ignore` for idempotent pipelines
+
+    **Example Workflows:**
+
+    1. **Build historical dataset:**
+    ```bash
+    # Backfill 200k ledgers
+    token-transfer --start-ledger 60000000 --end-ledger 60200000 | \
+      postgres-sink --dsn "$POSTGRES_DSN" \
+                    --table transfers \
+                    --batch-size 5000 \
+                    --conflict ignore
+    ```
+
+    2. **Real-time monitoring with Hasura:**
+    ```bash
+    # Stream to PostgreSQL
+    token-transfer --start-ledger 60200000 --follow | \
+      usdc-filter | \
+      postgres-sink --dsn "$POSTGRES_DSN" --table usdc_transfers
+
+    # Query with Hasura GraphQL
+    # See examples/hasura/ for full setup
+    ```
+
+    3. **Multi-table pipeline:**
+    ```bash
+    # Transfers table
+    token-transfer --start-ledger 60200000 --follow | \
+      postgres-sink --dsn "$POSTGRES_DSN" --table transfers &
+
+    # Contract events table
+    contract-events --start-ledger 60200000 --follow | \
+      postgres-sink --dsn "$POSTGRES_DSN" --table contract_events &
+
+    # Contract invocations table
+    contract-invocation --start-ledger 60200000 --follow | \
+      postgres-sink --dsn "$POSTGRES_DSN" --table invocations
+    ```
+
+    **Hasura Integration:**
+    See `/examples/hasura` for complete setup with:
+    - GraphQL API over postgres-sink tables
+    - Pre-built SQL views for common queries
+    - Real-time subscriptions
+    - Authentication patterns
+
+    **Reliability:**
+    - Automatic reconnection on connection loss
+    - Transaction-based batch inserts (all-or-nothing)
+    - Graceful shutdown with final flush
+    - Signal handling (Ctrl+C, SIGTERM)
+
+    **Limitations:**
+    - Requires PostgreSQL 9.4+ (for JSONB)
+    - No automatic table partitioning (add manually for massive datasets)
+    - No built-in compression (use PostgreSQL extensions)
+    - TOID generation requires `meta` field with ledger/tx/op indexes
+
+    **Dependencies:**
+    - PostgreSQL 9.4+ (JSONB support)
+    - PostgreSQL driver (lib/pq)
+
+    **Security:**
+    - Use environment variables for credentials
+    - Enable SSL mode for production (`sslmode=require`)
+    - Create read-only PostgreSQL users for query-only access
+    - Never commit connection strings to version control
+    - Use connection pooling to prevent resource exhaustion
+
+    **Advanced: Custom Indexes**
+    ```sql
+    -- Index for specific asset code queries
+    CREATE INDEX idx_events_usdc
+    ON events ((data->'transfer'->>'assetCode'))
+    WHERE data->'transfer'->>'assetCode' = 'USDC';
+
+    -- Index for amount range queries
+    CREATE INDEX idx_events_amount
+    ON events (((data->'transfer'->>'amount')::bigint));
+
+    -- Composite index for common query patterns
+    CREATE INDEX idx_events_asset_amount
+    ON events (
+      (data->'transfer'->>'assetCode'),
+      ((data->'transfer'->>'amount')::bigint)
+    );
+    ```

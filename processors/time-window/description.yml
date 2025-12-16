@@ -1,0 +1,118 @@
+processor:
+  name: time-window
+  type: transform
+  description: Filter events by time range using ledger sequence timestamps
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install time-window
+
+    # Events from last hour
+    token-transfer --start-ledger 60200000 | time-window --last 1h
+
+    # Events from last 24 hours
+    token-transfer --start-ledger 60200000 | time-window --last 24h
+
+  examples: |
+    # Track recent whale movements (last 6 hours)
+    token-transfer --start-ledger 60200000 --end-ledger 60300000 --follow | \
+      amount-filter --min 1000000000 | \
+      time-window --last 6h | \
+      nats-sink --subject "whales.recent"
+
+    # Weekly reports
+    token-transfer --start-ledger 60200000 --end-ledger 60300000 | \
+      usdc-filter | \
+      time-window --last 168h | \
+      json-file-sink --out weekly-usdc.jsonl
+
+    # Custom time range (Unix timestamps)
+    contract-events --start-ledger 60200000 --end-ledger 60300000 | \
+      time-window --start 1704067200 --end 1704153600 | \
+      postgres-sink --table jan_2024_events
+
+    # Recent contract activity (last 30 minutes)
+    contract-invocation --start-ledger 60200000 --end-ledger 60300000 | \
+      time-window --last 30m | \
+      jq 'select(.functionName == "swap")'
+
+  extended_description: |
+    Time Window Transform Processor
+
+    Filters events based on time ranges using ledger sequence numbers to estimate
+    event timestamps. Stellar ledgers close approximately every 5 seconds, allowing
+    reliable time-based filtering without requiring full timestamp indexing.
+
+    **What it does:**
+    - Reads JSON events from stdin
+    - Extracts ledger sequence from event metadata
+    - Estimates event time (genesis + ledger × 5 seconds)
+    - Filters events based on time criteria
+    - Writes filtered events to stdout
+
+    **Time Estimation:**
+    Each Stellar ledger closes approximately every 5 seconds. The processor calculates:
+    ```
+    event_time = stellar_genesis (July 1, 2015) + (ledger_sequence × 5 seconds)
+    ```
+
+    This provides ~5 second accuracy, sufficient for most time-based filtering needs.
+
+    **Configuration:**
+    - `--last <duration>`: Keep events from last duration (e.g., 1h, 24h, 7d, 30m)
+    - `--start <timestamp>`: Start time (Unix seconds, 0 = no limit)
+    - `--end <timestamp>`: End time (Unix seconds, 0 = no limit)
+    - `-q, --quiet`: Suppress startup banner
+
+    **Duration Syntax:**
+    Supports Go duration format:
+    - Minutes: `30m`, `90m`
+    - Hours: `1h`, `6h`, `24h`
+    - Days (as hours): `168h` (7 days), `720h` (30 days)
+
+    **Use Cases:**
+    - Filter recent events from large historical ranges
+    - Create time-based reports (daily, weekly, monthly)
+    - Track real-time activity windows
+    - Reduce data volume for downstream processors
+    - Build sliding time window aggregations
+
+    **Performance:**
+    - Near-zero overhead (simple arithmetic comparison)
+    - No external dependencies or state
+    - Stateless - each event processed independently
+
+    **Accuracy:**
+    - ±5 seconds (one ledger interval)
+    - Sufficient for most analytics and monitoring
+    - For exact timestamps, parse from transaction metadata
+
+    **Best Practices:**
+    - Use `--last` for recent events (simpler than Unix timestamps)
+    - Combine with `--follow` mode for real-time monitoring
+    - Use after origin processors to filter before expensive transforms
+    - For exact time ranges, use `--start` and `--end` with Unix timestamps
+
+    **Example Workflow:**
+    ```bash
+    # Real-time monitoring: only process events from last 5 minutes
+    token-transfer --start-ledger 60200000 --follow | \
+      time-window --last 5m | \
+      amount-filter --min 10000000 | \
+      nats-sink --subject "alerts.large-transfers"
+    ```
+
+    **Limitations:**
+    - Requires `meta.ledgerSequence` field (present in all origin processor output)
+    - Time estimates are approximate (±5 seconds)
+    - Does not modify event timestamps, only filters

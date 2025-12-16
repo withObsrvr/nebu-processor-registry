@@ -1,0 +1,138 @@
+processor:
+  name: contract-events
+  type: origin
+  description: Extract and decode Soroban contract events from Stellar ledgers
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu
+  ref: main
+
+# Protocol buffer definitions
+proto:
+  source: github.com/withObsrvr/nebu/examples/processors/contract-events/proto
+  package: contract_events
+
+# Schema versioning
+schema:
+  version: v1
+  identifier: nebu.contract_events.v1
+  documentation: https://github.com/withObsrvr/nebu/blob/main/examples/processors/contract-events/README.md
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install contract-events
+
+    # Basic usage - process a ledger range
+    contract-events --start-ledger 60200000 --end-ledger 60200100
+
+    # Pipe from nebu fetch
+    nebu fetch 60200000 60200100 | contract-events
+
+    # Quiet mode (no startup banner)
+    contract-events -q --start-ledger 60200000 --end-ledger 60200100
+
+  examples: |
+    # Extract all contract events
+    contract-events --start-ledger 60200000 --end-ledger 60200100 | jq
+
+    # Filter for specific event type
+    contract-events --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.eventType == "transfer")'
+
+    # Filter for specific contract
+    contract-events --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.contractId == "CA...")'
+
+    # Count events by type
+    contract-events --start-ledger 60200000 --end-ledger 60200100 | \
+      jq -r '.eventType' | sort | uniq -c
+
+    # Extract only successful transaction events
+    contract-events --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.inSuccessfulTx == true)'
+
+    # Use with custom RPC endpoint
+    contract-events --rpc-url https://rpc-pubnet.nodeswithobsrvr.co \
+      --start-ledger 60200000 --end-ledger 60200100
+
+    # Use with authentication
+    NEBU_RPC_AUTH="Api-Key YOUR_API_KEY" \
+      contract-events --start-ledger 60200000 --end-ledger 60200100
+
+  extended_description: |
+    Contract Events Origin Processor
+
+    This processor extracts and decodes Soroban contract events from Stellar ledgers,
+    emitting structured events with decoded topics and data. Perfect for indexing
+    smart contract activity, tracking specific events, or building event-driven applications.
+
+    **What it does:**
+    - Consumes Stellar ledger data from RPC endpoints
+    - Extracts all contract events from Soroban transactions
+    - Decodes event topics and data from XDR to JSON
+    - Emits structured JSON events with schema versioning
+    - Tracks event metadata (ledger, transaction, operation, event index)
+
+    **Event Types Captured:**
+    - CONTRACT: User-defined contract events
+    - SYSTEM: System events (transfers, mints, burns)
+    - DIAGNOSTIC: Debug events emitted during execution
+
+    **Event Structure:**
+    Each event includes:
+    - `contractId`: The contract that emitted the event
+    - `eventType`: Decoded event type from topics
+    - `topicDecoded`: Decoded event topics (names/values)
+    - `dataDecoded`: Decoded event data
+    - `inSuccessfulTx`: Whether the parent transaction succeeded
+    - `ledgerSequence`, `txHash`, `transactionIndex`, `operationIndex`, `eventIndex`
+
+    **Performance:**
+    - Processes ~50-100 ledgers/second (depends on contract activity)
+    - Memory usage: ~100-200MB for typical workloads
+    - Supports streaming for unbounded ranges
+
+    **Configuration:**
+    - `--start-ledger`: Starting ledger sequence (required)
+    - `--end-ledger`: Ending ledger sequence (optional)
+    - `--rpc-url`: Custom RPC endpoint
+    - `--network`: Network passphrase (mainnet, testnet, or custom)
+    - `-q, --quiet`: Suppress startup banner
+
+    **Environment Variables:**
+    - `NEBU_RPC_URL`: RPC endpoint URL
+    - `NEBU_NETWORK`: Network passphrase
+    - `NEBU_RPC_AUTH`: Authorization header (e.g., "Api-Key XXX")
+
+    **Output Format:**
+    All events include schema versioning:
+    - `_schema`: "nebu.contract_events.v1"
+    - `_nebu_version`: Runtime version
+
+    **Use Cases:**
+    - Index all events from a specific contract
+    - Track token transfers, mints, burns across contracts
+    - Build event-driven applications responding to contract state changes
+    - Analyze contract activity patterns
+    - Debug contract behavior by examining diagnostic events
+
+    **Dependencies:**
+    - Stellar Go SDK (github.com/stellar/go)
+    - Protocol Buffers for event types
+
+    **Limitations:**
+    - Requires Stellar RPC endpoint with Soroban support
+    - Event decoding is best-effort (unknown types returned as raw XDR)
+    - Diagnostic events only available if transaction failed or in debug mode
+
+    **Best Practices:**
+    - Use quiet mode (`-q`) when piping to other processors
+    - Filter for specific contracts early to reduce data volume
+    - Use authenticated RPC endpoints for production workloads
+    - Consider piping to postgres-sink for queryable event history

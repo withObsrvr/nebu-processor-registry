@@ -1,10 +1,12 @@
 # nebu Community Processor Registry
 
-This repository collects community-contributed processors for [nebu](https://github.com/withObsrvr/nebu), the minimal streaming runtime for Stellar.
+**Community-contributed processors for querying live Stellar data**
+
+This repository collects processors for [nebu](https://github.com/withObsrvr/nebu) - Unix pipes for blockchain indexing. Build custom processors, share with the community, and compose them into powerful data pipelines.
 
 ## About
 
-nebu processors are modular components that process Stellar ledger data. This registry allows the community to discover, share, and use processors built by others.
+nebu processors are composable Unix-style programs that process Stellar ledger data through stdin/stdout pipes. This registry allows the community to discover, share, and learn from processors built by others.
 
 **Processor Types:**
 - **Origin**: Consume ledgers from Stellar RPC, emit typed events (e.g., token transfers, Soroban events)
@@ -140,10 +142,10 @@ This registry (metadata only) is MIT licensed. Individual processors have their 
 
 ## Resources
 
-- [nebu Documentation](https://github.com/withObsrvr/nebu)
-- [Building Processors Guide](https://github.com/withObsrvr/nebu/blob/main/docs/BUILDING_PROCESSORS.md)
-- [Processor Interface Reference](https://github.com/withObsrvr/nebu/tree/main/pkg/processor)
-- [Community Discussions](https://github.com/withObsrvr/nebu-processor-registry/discussions)
+- [nebu Documentation](https://withobsrvr.github.io/nebu/) - Official docs and getting started
+- [nebu GitHub](https://github.com/withObsrvr/nebu) - Source code and examples
+- [Processor Interface Reference](https://github.com/withObsrvr/nebu/tree/main/pkg/processor) - Go interfaces
+- [Community Discussions](https://github.com/withObsrvr/nebu-processor-registry/discussions) - Ask questions
 
 ## Support
 
