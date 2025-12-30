@@ -9,7 +9,7 @@ processor:
     - withObsrvr
 
 repo:
-  github: withObsrvr/nebu
+  github: withObsrvr/nebu-processor-registry
   ref: main
 
 # Protocol buffer definitions
