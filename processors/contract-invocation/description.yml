@@ -66,88 +66,402 @@ docs:
       contract-invocation --start-ledger 60200000 --end-ledger 60200100
 
   extended_description: |
-    Contract Invocation Origin Processor
+    # Contract Invocation Origin Processor
 
     This processor extracts and decodes Soroban contract function invocations from
     Stellar ledgers, providing detailed information about function calls, arguments,
     state changes, and diagnostic events. Essential for analyzing contract behavior
     and building contract analytics dashboards.
 
-    **What it does:**
-    - Consumes Stellar ledger data from RPC endpoints
-    - Extracts all contract function invocations from Soroban transactions
-    - Decodes function names and arguments from XDR to JSON
-    - Captures state changes (ledger entry modifications)
-    - Captures diagnostic events (debug output)
-    - Tracks invocation success/failure
-    - Emits structured JSON events with schema versioning
+    ---
 
-    **Event Structure:**
-    Each invocation includes:
-    - `contractId`: The contract being invoked
-    - `functionName`: The function being called
-    - `arguments`: Decoded function arguments (as ScVal JSON)
-    - `invokingAccount`: The account that initiated the invocation
-    - `successful`: Whether the invocation succeeded
-    - `stateChanges`: Array of ledger entry modifications
-    - `diagnosticEvents`: Debug events emitted during execution
-    - `meta`: Transaction metadata (ledger, hash, indexes, timestamp)
+    ## Invocation Event Structure
 
-    **Performance:**
-    - Processes ~50-100 ledgers/second (depends on contract activity)
-    - Memory usage: ~100-300MB (includes full state change data)
-    - Supports streaming for unbounded ranges
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `contractId` | string | Contract address (C...) being invoked |
+    | `functionName` | string | Name of the function being called |
+    | `arguments` | ScVal[] | Decoded function arguments |
+    | `argumentsDecoded` | object[] | Human-readable argument values |
+    | `invokingAccount` | string | Account that initiated the invocation (G...) |
+    | `successful` | bool | Whether the invocation succeeded |
+    | `returnValue` | ScVal | Function return value (if successful) |
+    | `stateChanges` | StateChange[] | Ledger entry modifications |
+    | `diagnosticEvents` | Event[] | Debug events emitted during execution |
 
-    **Configuration:**
-    - `--start-ledger`: Starting ledger sequence (required)
-    - `--end-ledger`: Ending ledger sequence (optional)
-    - `--rpc-url`: Custom RPC endpoint
-    - `--network`: Network passphrase (mainnet, testnet, or custom)
-    - `-q, --quiet`: Suppress startup banner
+    ---
 
-    **Environment Variables:**
-    - `NEBU_RPC_URL`: RPC endpoint URL
-    - `NEBU_NETWORK`: Network passphrase
-    - `NEBU_RPC_AUTH`: Authorization header
+    ## Event Metadata Fields
 
-    **Output Format:**
-    All events include schema versioning:
-    - `_schema`: "nebu.contract_invocation.v1"
-    - `_nebu_version`: Runtime version
+    Each invocation includes chronological context in the `meta` field:
 
-    **Use Cases:**
-    - Analyze contract function call patterns
-    - Track specific contract interactions
-    - Build contract analytics dashboards
-    - Debug contract behavior with diagnostic events
-    - Monitor state changes from contract calls
-    - Extract custom business logic from specific functions
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `ledgerSequence` | uint32 | Ledger number for ordering |
+    | `txHash` | string | Transaction identifier (hex-encoded) |
+    | `transactionIndex` | uint32 | Position of transaction within ledger |
+    | `operationIndex` | uint32 | Position of operation within transaction |
+    | `timestamp` | string | Ledger close time (ISO 8601 format) |
 
-    **Example: Extract custom fields with jq**
+    ---
+
+    ## State Change Structure
+
+    Each state change captures ledger entry modifications:
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `type` | string | Change type: `created`, `updated`, or `deleted` |
+    | `keyType` | string | Ledger key type (e.g., `contractData`, `account`) |
+    | `key` | object | Ledger entry key (contract ID, data key, etc.) |
+    | `before` | object | Previous value (null if created) |
+    | `after` | object | New value (null if deleted) |
+
+    ---
+
+    ## Proto Schema
+
+    ```protobuf
+    message ContractInvocation {
+      string contract_id = 1;              // Contract address (C...)
+      string function_name = 2;            // Function being called
+      repeated ScVal arguments = 3;        // Raw arguments
+      repeated DecodedValue arguments_decoded = 4;
+      string invoking_account = 5;         // Caller account (G...)
+      bool successful = 6;                 // Invocation succeeded
+      ScVal return_value = 7;              // Return value
+      repeated StateChange state_changes = 8;
+      repeated DiagnosticEvent diagnostic_events = 9;
+      EventMeta meta = 10;
+    }
+
+    message StateChange {
+      ChangeType type = 1;                 // created, updated, deleted
+      string key_type = 2;                 // Ledger key type
+      LedgerKey key = 3;                   // Entry identifier
+      LedgerEntry before = 4;              // Previous value (null if created)
+      LedgerEntry after = 5;               // New value (null if deleted)
+    }
+
+    enum ChangeType {
+      CREATED = 0;
+      UPDATED = 1;
+      DELETED = 2;
+    }
+
+    message DiagnosticEvent {
+      string event_type = 1;               // fn_call, fn_return, error, etc.
+      repeated ScVal topics = 2;
+      ScVal data = 3;
+    }
+
+    message DecodedValue {
+      string type = 1;                     // ScVal type name
+      oneof value {
+        string string_value = 2;
+        string int_value = 3;              // i128/u128 as string
+        bytes bytes_value = 4;
+        string address_value = 5;
+        bool bool_value = 6;
+        repeated DecodedValue vec_value = 7;
+        map<string, DecodedValue> map_value = 8;
+      }
+    }
+
+    message EventMeta {
+      uint32 ledger_sequence = 1;
+      string tx_hash = 2;
+      uint32 transaction_index = 3;
+      uint32 operation_index = 4;
+      string timestamp = 5;
+    }
+    ```
+
+    ---
+
+    ## ScVal Types Reference
+
+    Common argument types and their JSON representation:
+
+    | ScVal Type | JSON Field | Example Value |
+    |------------|------------|---------------|
+    | Address | `addressValue` | `"GAIT2..."` or `"CDLZ..."` |
+    | I128 | `i128Value` | `"1000000000"` (string for precision) |
+    | U128 | `u128Value` | `"1000000000"` (string for precision) |
+    | I64 | `i64Value` | `12345` |
+    | U64 | `u64Value` | `12345` |
+    | I32 | `i32Value` | `123` |
+    | U32 | `u32Value` | `123` |
+    | Symbol | `symbolValue` | `"transfer"` |
+    | String | `stringValue` | `"hello world"` |
+    | Bytes | `bytesValue` | Base64 encoded string |
+    | Bool | `boolValue` | `true` or `false` |
+    | Vec | `vecValue` | `[...]` array of ScVal |
+    | Map | `mapValue` | `{...}` key-value pairs |
+
+    For complete ScVal documentation, see [Stellar ScVal Reference](https://developers.stellar.org/docs/learn/smart-contract-internals/types/built-in-types).
+
+    ---
+
+    ## Example Event Payloads
+
+    **Successful Token Transfer:**
+    ```json
+    {
+      "_schema": "nebu.contract_invocation.v1",
+      "_nebu_version": "1.0.0",
+      "contractId": "CDMLFMKMMD7MWZP3FGMUZRSAVCF3TZ5HVJ6GH23QS6Y5EO3FLPV5RADD",
+      "functionName": "transfer",
+      "argumentsDecoded": [
+        {"type": "address", "addressValue": "GAIT2WQETHTXS5LBXQ5XSMMSLZMXCXAYOFDLNPNQWG2DRJXJXJXRPC7A"},
+        {"type": "address", "addressValue": "GBXRV5PKTOTZXQBJQTA5GXSXMCMCPRLGKDSJV4KTJFKCXJXPJXJXJXJX"},
+        {"type": "i128", "i128Value": "10000000000"}
+      ],
+      "invokingAccount": "GAIT2WQETHTXS5LBXQ5XSMMSLZMXCXAYOFDLNPNQWG2DRJXJXJXRPC7A",
+      "successful": true,
+      "returnValue": {"type": "void"},
+      "stateChanges": [
+        {
+          "type": "updated",
+          "keyType": "contractData",
+          "key": {"contractId": "CDMLFM...", "key": {"symbolValue": "Balance"}},
+          "before": {"i128Value": "50000000000"},
+          "after": {"i128Value": "40000000000"}
+        },
+        {
+          "type": "updated",
+          "keyType": "contractData",
+          "key": {"contractId": "CDMLFM...", "key": {"symbolValue": "Balance"}},
+          "before": {"i128Value": "0"},
+          "after": {"i128Value": "10000000000"}
+        }
+      ],
+      "diagnosticEvents": [],
+      "meta": {
+        "ledgerSequence": 60200001,
+        "txHash": "abc123def456789012345678901234567890123456789012345678901234",
+        "transactionIndex": 3,
+        "operationIndex": 0,
+        "timestamp": "2024-12-10T14:30:00Z"
+      }
+    }
+    ```
+
+    **DEX Swap with State Changes:**
+    ```json
+    {
+      "_schema": "nebu.contract_invocation.v1",
+      "_nebu_version": "1.0.0",
+      "contractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      "functionName": "swap",
+      "argumentsDecoded": [
+        {"type": "address", "addressValue": "GAIT2WQETHTXS5LBXQ5XSMMSLZMXCXAYOFDLNPNQWG2DRJXJXJXRPC7A"},
+        {"type": "address", "addressValue": "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"},
+        {"type": "address", "addressValue": "CDMLFMKMMD7MWZP3FGMUZRSAVCF3TZ5HVJ6GH23QS6Y5EO3FLPV5RADD"},
+        {"type": "i128", "i128Value": "1000000000"},
+        {"type": "i128", "i128Value": "950000000"}
+      ],
+      "invokingAccount": "GAIT2WQETHTXS5LBXQ5XSMMSLZMXCXAYOFDLNPNQWG2DRJXJXJXRPC7A",
+      "successful": true,
+      "returnValue": {
+        "type": "i128",
+        "i128Value": "985000000"
+      },
+      "stateChanges": [
+        {
+          "type": "updated",
+          "keyType": "contractData",
+          "key": {"contractId": "CDLZFC...", "key": {"symbolValue": "Reserve0"}},
+          "before": {"i128Value": "5000000000000"},
+          "after": {"i128Value": "5001000000000"}
+        },
+        {
+          "type": "updated",
+          "keyType": "contractData",
+          "key": {"contractId": "CDLZFC...", "key": {"symbolValue": "Reserve1"}},
+          "before": {"i128Value": "4000000000000"},
+          "after": {"i128Value": "3999015000000"}
+        }
+      ],
+      "diagnosticEvents": [],
+      "meta": {
+        "ledgerSequence": 60200002,
+        "txHash": "def456abc789012345678901234567890123456789012345678901234567",
+        "transactionIndex": 5,
+        "operationIndex": 0,
+        "timestamp": "2024-12-10T14:30:05Z"
+      }
+    }
+    ```
+
+    **Failed Invocation with Diagnostics:**
+    ```json
+    {
+      "_schema": "nebu.contract_invocation.v1",
+      "_nebu_version": "1.0.0",
+      "contractId": "CDMLFMKMMD7MWZP3FGMUZRSAVCF3TZ5HVJ6GH23QS6Y5EO3FLPV5RADD",
+      "functionName": "transfer",
+      "argumentsDecoded": [
+        {"type": "address", "addressValue": "GAIT2WQETHTXS5LBXQ5XSMMSLZMXCXAYOFDLNPNQWG2DRJXJXJXRPC7A"},
+        {"type": "address", "addressValue": "GBXRV5PKTOTZXQBJQTA5GXSXMCMCPRLGKDSJV4KTJFKCXJXPJXJXJXJX"},
+        {"type": "i128", "i128Value": "999999999999999999"}
+      ],
+      "invokingAccount": "GAIT2WQETHTXS5LBXQ5XSMMSLZMXCXAYOFDLNPNQWG2DRJXJXJXRPC7A",
+      "successful": false,
+      "returnValue": null,
+      "stateChanges": [],
+      "diagnosticEvents": [
+        {
+          "eventType": "fn_call",
+          "topics": [{"symbolValue": "fn_call"}, {"symbolValue": "transfer"}],
+          "data": {"vecValue": [{"addressValue": "GAIT2..."}, {"i128Value": "999999999999999999"}]}
+        },
+        {
+          "eventType": "error",
+          "topics": [{"symbolValue": "error"}],
+          "data": {"stringValue": "insufficient balance"}
+        }
+      ],
+      "meta": {
+        "ledgerSequence": 60200003,
+        "txHash": "789abc012345678901234567890123456789012345678901234567890123",
+        "transactionIndex": 7,
+        "operationIndex": 0,
+        "timestamp": "2024-12-10T14:30:10Z"
+      }
+    }
+    ```
+
+    ---
+
+    ## Extracting Function Arguments
+
+    Use jq to extract specific argument values:
+
     ```bash
-    # Extract specific arguments from a function call
-    contract-invocation --start-ledger 60200000 --end-ledger 60200001 | \
-      jq 'select(.functionName == "sink_carbon") | {
-        funder: .arguments[0].addressValue,
-        recipient: .arguments[1].addressValue,
-        amount: .arguments[2].u128Value,
-        project: .arguments[3].stringValue
+    # Extract transfer details
+    contract-invocation --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.functionName == "transfer") | {
+        from: .argumentsDecoded[0].addressValue,
+        to: .argumentsDecoded[1].addressValue,
+        amount: .argumentsDecoded[2].i128Value
+      }'
+
+    # Extract swap parameters
+    contract-invocation --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.functionName == "swap") | {
+        user: .argumentsDecoded[0].addressValue,
+        tokenIn: .argumentsDecoded[1].addressValue,
+        tokenOut: .argumentsDecoded[2].addressValue,
+        amountIn: .argumentsDecoded[3].i128Value,
+        minAmountOut: .argumentsDecoded[4].i128Value,
+        actualOut: .returnValue.i128Value
       }'
     ```
 
-    **Dependencies:**
-    - Stellar Go SDK (github.com/stellar/go)
+    ---
+
+    ## Operational Modes
+
+    **Bounded Mode (Backfill):**
+    ```bash
+    contract-invocation --start-ledger 60200000 --end-ledger 60200100
+    ```
+    - Processes specified range and exits
+    - Best for: Historical analysis, batch processing
+    - Memory: Higher due to state change data
+
+    **Unbounded Mode (Streaming):**
+    ```bash
+    contract-invocation --start-ledger 60200000  # No end-ledger
+    ```
+    - Processes from start ledger, then follows new ledgers
+    - Best for: Real-time monitoring, live dashboards
+    - Memory: Constant (streaming mode)
+
+    ---
+
+    ## Configuration
+
+    **Command-Line Flags:**
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--start-ledger` | Starting ledger sequence (required) | — |
+    | `--end-ledger` | Ending ledger sequence | Latest (streaming) |
+    | `--rpc-url` | Stellar RPC endpoint URL | Public RPC |
+    | `--network` | Network passphrase | Mainnet |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    **Environment Variables:**
+
+    | Variable | Description |
+    |----------|-------------|
+    | `NEBU_RPC_URL` | RPC endpoint URL (overridden by --rpc-url) |
+    | `NEBU_NETWORK` | Network passphrase (overridden by --network) |
+    | `NEBU_RPC_AUTH` | Authorization header (e.g., "Api-Key XXX") |
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | 50-100 ledgers/sec | Depends on contract activity |
+    | Memory | 100-300 MB | Includes full state change data |
+    | Latency | ~1 second | From ledger close to event emit |
+
+    ---
+
+    ## Common Function Patterns
+
+    | Function | Contract Type | Typical Arguments |
+    |----------|---------------|-------------------|
+    | `transfer` | Token | from, to, amount |
+    | `approve` | Token | from, spender, amount, expiration |
+    | `mint` | Token | to, amount |
+    | `burn` | Token | from, amount |
+    | `swap` | DEX | user, token_in, token_out, amount_in, min_out |
+    | `deposit` | LP | user, amounts, min_shares |
+    | `withdraw` | LP | user, shares, min_amounts |
+    | `initialize` | Any | admin, config params |
+
+    ---
+
+    ## Use Cases
+
+    - **Analyze contract function call patterns** — Which functions are called most?
+    - **Track specific contract interactions** — Monitor a DEX or lending protocol
+    - **Build contract analytics dashboards** — Visualize activity over time
+    - **Debug contract behavior** — Examine diagnostic events from failures
+    - **Monitor state changes** — Track how contract storage evolves
+    - **Extract business logic data** — Pull specific arguments from known functions
+
+    ---
+
+    ## Dependencies
+
+    - Stellar Go SDK (`github.com/stellar/go`)
     - Protocol Buffers for event types
+    - Access to Stellar RPC endpoint with Soroban support
 
-    **Limitations:**
+    ---
+
+    ## Limitations
+
     - Requires Stellar RPC endpoint with Soroban support
-    - Argument decoding is best-effort (complex types may need manual parsing)
+    - Argument decoding is best-effort (complex nested types may need manual parsing)
     - State changes include full ledger entry data (can be verbose)
-    - Diagnostic events only available on failed transactions or debug mode
+    - Diagnostic events only available on failed transactions
+    - Historical data availability depends on RPC endpoint retention
 
-    **Best Practices:**
-    - Use quiet mode (`-q`) when piping to other processors
-    - Filter for specific contracts/functions early to reduce data volume
-    - Use authenticated RPC endpoints for production
-    - Pipe to postgres-sink for queryable invocation history
-    - Use jq to extract custom fields for business logic
+    ---
+
+    ## Best Practices
+
+    1. **Pipeline Usage:** Use quiet mode (`-q`) when piping to other processors
+    2. **Filter Early:** Filter for specific contracts/functions to reduce data volume
+    3. **Production Workloads:** Use authenticated RPC endpoints
+    4. **Data Storage:** Pipe to postgres-sink for queryable invocation history
+    5. **Argument Extraction:** Use jq to extract specific fields for business logic
+    6. **State Analysis:** Focus on `stateChanges` to understand contract behavior

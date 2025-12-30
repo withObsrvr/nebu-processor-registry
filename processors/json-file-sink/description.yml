@@ -44,65 +44,98 @@ docs:
       json-file-sink -q --out data.jsonl
 
   extended_description: |
-    JSON File Sink Processor
+    # JSON File Sink Processor
 
     A simple, reliable sink that writes JSON events to a JSONL (JSON Lines) file.
     Each event is written as a single line, making the output easy to process with
     standard Unix tools like grep, awk, and jq.
 
-    **What it does:**
+    ---
+
+    ## What It Does
+
     - Reads JSON events from stdin
     - Writes each event as a single line to output file
     - Creates file on first event
     - Flushes after each write for reliability
     - Preserves all event fields and schema versioning
 
-    **Output Format:**
+    ---
+
+    ## Output Format
+
     JSONL (JSON Lines) - one JSON object per line:
     ```
     {"transfer":{"from":"GA...","to":"GB...","amount":"1000000"},"meta":{...}}
     {"transfer":{"from":"GC...","to":"GD...","amount":"2000000"},"meta":{...}}
     ```
 
-    This format is ideal for:
+    **Ideal for:**
     - Streaming processing with Unix tools
     - Loading into databases (PostgreSQL COPY, DuckDB)
     - Incremental appends
     - Line-based diff and grep
 
-    **Configuration:**
-    - `--out <file>`: Output file path (default: events.jsonl)
-    - `-q, --quiet`: Suppress startup banner
+    ---
 
-    **File Handling:**
-    - Creates file if it doesn't exist
-    - **Overwrites file if it exists** (not append mode)
-    - Flushes after each event for crash safety
-    - Writes to stderr on errors (doesn't corrupt output file)
+    ## Configuration
 
-    **Performance:**
-    - Minimal overhead (buffered I/O)
-    - ~10,000-50,000 events/second (depends on disk)
-    - Suitable for large historical backfills
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--out` | Output file path | `events.jsonl` |
+    | `-q, --quiet` | Suppress startup banner | false |
 
-    **Use Cases:**
-    - Build local datasets for analysis
-    - Cache processed events
-    - Archive historical data
-    - Export for external tools (Python, R, Excel)
-    - Development and debugging
+    ---
 
-    **Reliability:**
-    - Automatic flush after each write
-    - Safe for long-running pipelines
-    - Handles interrupts gracefully (Ctrl+C)
-    - No data loss on crashes (up to last event)
+    ## File Handling
 
-    **Best Practices:**
-    - Use `.jsonl` extension to indicate JSON Lines format
-    - Process large files with `jq -c` for compact output
-    - Load into DuckDB for SQL analytics
-    - Use quiet mode when chaining multiple processors
+    | Behavior | Description |
+    |----------|-------------|
+    | Create | Creates file if it doesn't exist |
+    | Overwrite | **Overwrites file if it exists** (not append mode) |
+    | Flush | Flushes after each event for crash safety |
+    | Errors | Writes to stderr (doesn't corrupt output file) |
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | 10,000-50,000 events/sec | Depends on disk I/O |
+    | Memory | < 10 MB | Buffered I/O |
+    | Latency | < 1 ms | Per-event flush |
+
+    ---
+
+    ## Use Cases
+
+    - **Build local datasets** — For offline analysis
+    - **Cache processed events** — Avoid re-fetching from RPC
+    - **Archive historical data** — Long-term storage
+    - **Export for external tools** — Python, R, Excel, DuckDB
+    - **Development/debugging** — Inspect pipeline output
+
+    ---
+
+    ## Reliability
+
+    | Feature | Description |
+    |---------|-------------|
+    | Flush | Automatic flush after each write |
+    | Long-running | Safe for extended pipelines |
+    | Interrupts | Handles Ctrl+C gracefully |
+    | Crash safety | No data loss (up to last event) |
+
+    ---
+
+    ## Best Practices
+
+    1. **File extension:** Use `.jsonl` to indicate JSON Lines format
+    2. **Compact output:** Process large files with `jq -c`
+    3. **SQL analytics:** Load into DuckDB for queries
+    4. **Quiet mode:** Use `-q` when chaining multiple processors
+    5. **Compression:** Pipe to gzip for storage efficiency
 
     **Example Workflows:**
 

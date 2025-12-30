@@ -43,11 +43,11 @@ docs:
 
     # Filter for specific transfer types
     token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
-      jq 'select(.type == "transfer")'
+      jq 'select(.transfer != null)'
 
-    # Count payment operations in a range
+    # Count transfer events in a range
     token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
-      jq 'select(.type == "payment")' | wc -l
+      jq 'select(.transfer != null)' | wc -l
 
     # Use with USDC filter
     token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
@@ -66,60 +66,287 @@ docs:
       token-transfer --start-ledger 60200000 --end-ledger 60200100
 
   extended_description: |
-    Token Transfer Origin Processor
+    # Token Transfer Origin Processor
 
     This processor extracts token transfer events from Stellar ledgers and emits
-    structured events in a standardized format. It processes payment operations,
-    path payment operations, and other transfer-related operations.
+    structured events in a standardized format. It captures token movements from
+    diverse sources including simple payments, path payments, account merges,
+    claimable balance operations, liquidity pool operations, clawback operations,
+    and Stellar Asset Contract (SAC) events.
 
-    **What it does:**
-    - Consumes Stellar ledger data from RPC endpoints
-    - Parses operations to identify token transfers
-    - Emits structured JSON events with schema versioning
-    - Supports both bounded and unbounded ranges
-    - Provides quiet mode for pipeline usage
+    ---
 
-    **Event Types:**
-    - `payment`: Direct payment operations (Payment, PathPaymentStrictSend, PathPaymentStrictReceive)
-    - `transfer`: Soroban token transfer events
-    - `mint`: Token minting events
-    - `burn`: Token burning events
-    - `clawback`: Asset clawback operations
+    ## Event Types
 
-    **Performance:**
-    - Processes ~100-200 ledgers/second (depending on transaction density)
-    - Memory usage: ~50-100MB for typical workloads
-    - Supports streaming (constant memory for unbounded ranges)
+    | Event Type | Purpose | Key Fields |
+    |------------|---------|------------|
+    | **Transfer** | Asset movement between accounts | `from`, `to`, `amount`, `asset` |
+    | **Mint** | Token creation by issuer | `to`, `amount`, `asset` |
+    | **Burn** | Token destruction to issuer | `from`, `amount`, `asset` |
+    | **Clawback** | Forced asset recovery by issuer | `from`, `amount`, `asset` |
+    | **Fee** | Network fees and refunds | `account`, `amount` |
 
-    **Configuration:**
-    - `--start-ledger`: Starting ledger sequence (required)
-    - `--end-ledger`: Ending ledger sequence (optional, defaults to latest)
-    - `--rpc-url`: Custom RPC endpoint (defaults to public RPC)
-    - `--network`: Network passphrase (mainnet, testnet, or custom)
-    - `-q, --quiet`: Suppress startup banner
+    ---
+
+    ## Event Metadata Fields
+
+    Each event includes chronological context in the `meta` field:
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `ledgerSequence` | uint32 | Ledger number for ordering |
+    | `txHash` | string | Transaction identifier (hex-encoded) |
+    | `transactionIndex` | uint32 | Position of transaction within ledger |
+    | `operationIndex` | uint32 | Position of operation within transaction (null for tx-level events) |
+    | `timestamp` | string | Ledger close time (ISO 8601 format) |
+
+    ---
+
+    ## Proto Schema
+
+    ```protobuf
+    message TokenTransferEvent {
+      oneof event {
+        Transfer transfer = 1;
+        Mint mint = 2;
+        Burn burn = 3;
+        Clawback clawback = 4;
+        Fee fee = 5;
+      }
+      EventMeta meta = 10;
+    }
+
+    message Transfer {
+      string from = 1;        // Source account (G... or C... address)
+      string to = 2;          // Destination account
+      string amount = 3;      // Amount in stroops (1/10^7 units)
+      Asset asset = 4;        // Asset details
+    }
+
+    message Mint {
+      string to = 1;          // Recipient account
+      string amount = 2;      // Amount minted
+      Asset asset = 3;        // Asset details
+    }
+
+    message Burn {
+      string from = 1;        // Account burning tokens
+      string amount = 2;      // Amount burned
+      Asset asset = 3;        // Asset details
+    }
+
+    message Clawback {
+      string from = 1;        // Account being clawed back from
+      string amount = 2;      // Amount clawed back
+      Asset asset = 3;        // Asset details
+    }
+
+    message Fee {
+      string account = 1;     // Account paying/receiving fee
+      string amount = 2;      // Fee amount (negative for refunds)
+    }
+
+    message Asset {
+      string type = 1;        // "native", "credit_alphanum4", or "credit_alphanum12"
+      string code = 2;        // Asset code (empty for native XLM)
+      string issuer = 3;      // Issuer account (empty for native XLM)
+      string contract = 4;    // SAC contract address (if applicable)
+    }
+
+    message EventMeta {
+      uint32 ledger_sequence = 1;
+      string tx_hash = 2;
+      uint32 transaction_index = 3;
+      uint32 operation_index = 4;
+      string timestamp = 5;
+    }
+    ```
+
+    ---
+
+    ## Example Event Payloads
+
+    **Transfer Event:**
+    ```json
+    {
+      "_schema": "nebu.token_transfer.v1",
+      "_nebu_version": "1.0.0",
+      "transfer": {
+        "from": "GAIT2WQETHTXS5LBXQ5XSMMSLZMXCXAYOFDLNPNQWG2DRJXJXJXRPC7A",
+        "to": "GBXRV5PKTOTZXQBJQTA5GXSXMCMCPRLGKDSJV4KTJFKCXJXPJXJXJXJX",
+        "amount": "10000000000",
+        "asset": {
+          "type": "credit_alphanum4",
+          "code": "USDC",
+          "issuer": "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"
+        }
+      },
+      "meta": {
+        "ledgerSequence": 60200001,
+        "txHash": "abc123def456789012345678901234567890123456789012345678901234",
+        "transactionIndex": 5,
+        "operationIndex": 0,
+        "timestamp": "2024-12-10T14:30:00Z"
+      }
+    }
+    ```
+
+    **Mint Event:**
+    ```json
+    {
+      "_schema": "nebu.token_transfer.v1",
+      "_nebu_version": "1.0.0",
+      "mint": {
+        "to": "GBXRV5PKTOTZXQBJQTA5GXSXMCMCPRLGKDSJV4KTJFKCXJXPJXJXJXJX",
+        "amount": "500000000000",
+        "asset": {
+          "type": "credit_alphanum4",
+          "code": "USDC",
+          "issuer": "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"
+        }
+      },
+      "meta": {
+        "ledgerSequence": 60200002,
+        "txHash": "def456abc789012345678901234567890123456789012345678901234567",
+        "transactionIndex": 2,
+        "operationIndex": 0,
+        "timestamp": "2024-12-10T14:30:05Z"
+      }
+    }
+    ```
+
+    **Fee Event:**
+    ```json
+    {
+      "_schema": "nebu.token_transfer.v1",
+      "_nebu_version": "1.0.0",
+      "fee": {
+        "account": "GAIT2WQETHTXS5LBXQ5XSMMSLZMXCXAYOFDLNPNQWG2DRJXJXJXRPC7A",
+        "amount": "100"
+      },
+      "meta": {
+        "ledgerSequence": 60200001,
+        "txHash": "abc123def456789012345678901234567890123456789012345678901234",
+        "transactionIndex": 5,
+        "operationIndex": null,
+        "timestamp": "2024-12-10T14:30:00Z"
+      }
+    }
+    ```
+
+    ---
+
+    ## Event Ordering
+
+    Events are emitted in chronological order within each ledger:
+
+    1. **Fee events first** — Network fees charged for each transaction
+    2. **Operation events** — In transaction/operation index order
+    3. **Fee refund events** — For Soroban transactions with unused resources (negative amounts)
+
+    This ordering guarantees:
+    - Fee deduction precedes any operation effects
+    - Events can be processed in order for accurate balance tracking
+    - Idempotent replay produces identical results
+
+    **Identifying Refunds:**
+    Fee refund events use the same `Fee` event type but with negative `amount` values.
+    They only appear for Soroban transactions that reserved more resources than used.
+
+    ---
+
+    ## Operational Modes
+
+    **Bounded Mode (Backfill):**
+    ```bash
+    token-transfer --start-ledger 60200000 --end-ledger 60200100
+    ```
+    - Processes specified range and exits
+    - Best for: Historical data backfills, batch processing
+    - Memory: Constant regardless of range size
+
+    **Unbounded Mode (Streaming):**
+    ```bash
+    token-transfer --start-ledger 60200000  # No end-ledger
+    ```
+    - Processes from start ledger to current, then follows new ledgers
+    - Best for: Real-time indexing, live dashboards
+    - Memory: Constant (streaming mode)
+
+    ---
+
+    ## Configuration
+
+    **Command-Line Flags:**
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--start-ledger` | Starting ledger sequence (required) | — |
+    | `--end-ledger` | Ending ledger sequence | Latest (streaming) |
+    | `--rpc-url` | Stellar RPC endpoint URL | Public RPC |
+    | `--network` | Network passphrase | Mainnet |
+    | `-q, --quiet` | Suppress startup banner | false |
 
     **Environment Variables:**
-    - `NEBU_RPC_URL`: RPC endpoint URL
-    - `NEBU_NETWORK`: Network passphrase
-    - `NEBU_RPC_AUTH`: Authorization header (e.g., "Api-Key XXX")
 
-    **Output Format:**
-    All events include schema versioning fields:
-    - `_schema`: Schema identifier (e.g., "nebu.token_transfer.v1")
-    - `_nebu_version`: Runtime version
+    | Variable | Description |
+    |----------|-------------|
+    | `NEBU_RPC_URL` | RPC endpoint URL (overridden by --rpc-url) |
+    | `NEBU_NETWORK` | Network passphrase (overridden by --network) |
+    | `NEBU_RPC_AUTH` | Authorization header (e.g., "Api-Key XXX") |
 
-    **Dependencies:**
-    - Stellar Go SDK (github.com/stellar/go)
-    - Protocol Buffers (for internal event types)
+    ---
 
-    **Limitations:**
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | 100-200 ledgers/sec | Depends on transaction density |
+    | Memory | 50-100 MB | Constant for streaming |
+    | Latency | ~1 second | From ledger close to event emit |
+
+    ---
+
+    ## Operations Captured
+
+    The processor captures token movements from:
+    - **Payment** — Direct asset transfers
+    - **PathPaymentStrictSend** — Path payments with fixed send amount
+    - **PathPaymentStrictReceive** — Path payments with fixed receive amount
+    - **AccountMerge** — XLM transfer when merging accounts
+    - **CreateClaimableBalance** — Assets moved to claimable balance
+    - **ClaimClaimableBalance** — Assets claimed from claimable balance
+    - **Clawback** — Issuer-initiated asset recovery
+    - **ClawbackClaimableBalance** — Clawback from claimable balance
+    - **LiquidityPoolDeposit** — Assets deposited to LP
+    - **LiquidityPoolWithdraw** — Assets withdrawn from LP
+    - **SAC Transfer** — Stellar Asset Contract transfer events
+    - **SAC Mint** — Stellar Asset Contract mint events
+    - **SAC Burn** — Stellar Asset Contract burn events
+
+    ---
+
+    ## Dependencies
+
+    - Stellar Go SDK (`github.com/stellar/go`)
+    - Protocol Buffers runtime
+    - Access to Stellar RPC endpoint
+
+    ---
+
+    ## Limitations
+
     - Requires access to Stellar RPC endpoint
-    - Historical data availability depends on RPC endpoint
+    - Historical data availability depends on RPC endpoint retention
     - Some RPC endpoints require authentication for high request rates
+    - SAC events require Soroban-enabled RPC endpoints
 
-    **Best Practices:**
-    - Use quiet mode (`-q`) when piping to other processors
-    - For production workloads, use authenticated RPC endpoints
-    - Monitor RPC rate limits to avoid throttling
-    - Use bounded ranges for batch processing
-    - Use unbounded ranges for real-time streaming
+    ---
+
+    ## Best Practices
+
+    1. **Pipeline Usage:** Use quiet mode (`-q`) when piping to other processors
+    2. **Production Workloads:** Use authenticated RPC endpoints to avoid rate limiting
+    3. **Batch Processing:** Use bounded mode with explicit end-ledger for backfills
+    4. **Real-Time Streaming:** Use unbounded mode and monitor for RPC disconnections
+    5. **Idempotency:** Use with postgres-sink's `--conflict ignore` for replayable pipelines

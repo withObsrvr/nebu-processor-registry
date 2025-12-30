@@ -26,6 +26,61 @@ nebu install <processor-name>
 <origin-processor> | <transform-processor> | <sink-processor>
 ```
 
+## Claude Code Skills for Processor Development
+
+This repository also hosts Claude Code skills to help you build processors interactively.
+
+### nebu-processor-builder
+
+Interactively scaffold production-ready Nebu processors with proper structure and patterns.
+
+**Installation:**
+
+**Option 1: Project-Level (Recommended)**
+```bash
+# In your nebu repository
+mkdir -p .claude/skills
+cd .claude/skills
+git clone https://github.com/withObsrvr/nebu-processor-registry.git
+ln -s nebu-processor-registry/skills/nebu-processor-builder nebu-processor-builder
+```
+
+**Option 2: Personal**
+```bash
+# In your home directory
+mkdir -p ~/.claude/skills
+cd ~/.claude/skills
+git clone https://github.com/withObsrvr/nebu-processor-registry.git
+ln -s nebu-processor-registry/skills/nebu-processor-builder nebu-processor-builder
+```
+
+**Usage:**
+
+```
+# In Claude Code, invoke the skill
+/nebu-processor-builder
+```
+
+Claude Code automatically discovers skills at startup from `.claude/skills/` (project) and `~/.claude/skills/` (personal).
+
+The skill will guide you through:
+1. Choosing processor type (origin/transform/sink)
+2. Describing what it does
+3. Naming your processor
+4. Generating proper Go module structure
+5. Using official CLI helpers
+6. Creating registry entry (optional)
+
+**What it generates:**
+- ✓ Proper `go.mod` (no replace directives!)
+- ✓ Main entry point using CLI helpers
+- ✓ Skeleton with TODOs for your logic
+- ✓ README with usage examples
+- ✓ Registry entry (optional)
+- ✓ Code that compiles immediately
+
+**Learn more:** See [`skills/nebu-processor-builder/`](skills/nebu-processor-builder/)
+
 ## Submitting Your Processor
 
 We welcome contributions! To submit your processor to the community registry:
