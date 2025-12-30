@@ -9,7 +9,7 @@ processor:
     - withObsrvr
 
 repo:
-  github: withObsrvr/nebu
+  github: withObsrvr/nebu-processor-registry
   ref: main
 
 docs:
@@ -27,53 +27,197 @@ docs:
       dedup --key meta.txHash | \
       postgres-sink --table usdc_transfers
 
-    # Deduplicate contract events by event ID
+    # Deduplicate contract events by composite key
     contract-events --start-ledger 60200000 | \
-      dedup --key eventId | \
-      json-file-sink
+      dedup --key meta.txHash | \
+      json-file-sink --out unique-events.jsonl
 
-    # Track unique accounts
+    # Track unique sender accounts
     token-transfer --start-ledger 60200000 | \
-      jq -c '{account: .transfer.from}' | \
+      jq -c '{account: .transfer.from, meta: .meta}' | \
       dedup --key account
 
+    # First transfer per account pair
+    token-transfer --start-ledger 60200000 | \
+      jq -c '. + {pairKey: "\(.transfer.from)-\(.transfer.to)"}' | \
+      dedup --key pairKey
+
   extended_description: |
-    Dedup Transform Processor
+    # Dedup Transform Processor
 
     Removes duplicate events from a stream based on a specified JSON path key.
     Maintains an in-memory set of seen keys, emitting only the first occurrence
     of each unique key.
 
-    **What it does:**
-    - Reads JSON events from stdin
-    - Extracts the specified key from each event
-    - Tracks seen keys in-memory
-    - Emits only events with unseen keys
-    - Preserves event order
+    ---
 
-    **Configuration:**
-    - `--key`: JSON path to use for deduplication (e.g., "meta.txHash", "id")
-    - `-q, --quiet`: Suppress startup banner
+    ## Key Path Syntax
 
-    **Key Path Syntax:**
-    - Simple field: `id`
-    - Nested field: `meta.txHash`
-    - Array index: `arguments[0]`
+    The `--key` flag specifies which field to use for deduplication:
 
-    **Use Cases:**
-    - Remove duplicate events from unreliable streams
-    - Track unique transaction hashes
-    - Filter for first occurrence of contract calls
-    - Ensure exactly-once processing
+    | Syntax | Example Key | Matches JSON |
+    |--------|-------------|--------------|
+    | Simple field | `id` | `{"id": "abc"}` → `"abc"` |
+    | Nested field | `meta.txHash` | `{"meta": {"txHash": "xyz"}}` → `"xyz"` |
+    | Deep nesting | `a.b.c` | `{"a": {"b": {"c": "val"}}}` → `"val"` |
 
-    **Memory Considerations:**
-    - Stores all seen keys in memory (one string per unique key)
-    - For long-running streams, memory grows with unique key count
-    - Consider restarting periodically for unbounded streams
-    - For bounded ranges, memory is released after completion
+    **Key Resolution:**
+    - Keys are extracted as strings
+    - Missing keys result in empty string (event passes through)
+    - Null values are treated as the string `"null"`
 
-    **Best Practices:**
-    - Choose a stable, unique key (like transaction hash)
-    - Use for short-to-medium lived streams
-    - For long-term deduplication, consider using a database-backed solution
-    - Combine with time-window for time-based deduplication
+    ---
+
+    ## Deduplication Behavior
+
+    | Scenario | Behavior |
+    |----------|----------|
+    | First occurrence | Event emitted, key stored |
+    | Duplicate key | Event silently dropped |
+    | Missing key field | Event emitted (empty key) |
+    | Null key value | Treated as string "null" |
+
+    **Example:**
+    ```
+    Input 1: {"meta": {"txHash": "abc123"}, ...}  → Emitted (first "abc123")
+    Input 2: {"meta": {"txHash": "def456"}, ...}  → Emitted (first "def456")
+    Input 3: {"meta": {"txHash": "abc123"}, ...}  → Dropped (duplicate "abc123")
+    Input 4: {"meta": {"txHash": "ghi789"}, ...}  → Emitted (first "ghi789")
+    ```
+
+    ---
+
+    ## Memory Behavior
+
+    The processor stores all seen keys in memory:
+
+    | Unique Keys | Approximate Memory | Notes |
+    |-------------|-------------------|-------|
+    | 10,000 | ~1 MB | Short batch jobs |
+    | 100,000 | ~10 MB | Medium batch jobs |
+    | 1,000,000 | ~100 MB | Large backfills |
+    | 10,000,000 | ~1 GB | Very large datasets |
+
+    **Memory Formula:**
+    ```
+    memory ≈ unique_keys × average_key_length × 2 (Go string overhead)
+    ```
+
+    For typical transaction hashes (64 chars), each unique key uses ~150 bytes.
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--key` | JSON path for deduplication key (required) | — |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    ---
+
+    ## When to Use Dedup
+
+    | Scenario | Recommendation |
+    |----------|----------------|
+    | Short batch (< 1M events) | Use dedup processor |
+    | Long-running stream | Use postgres-sink `--conflict ignore` |
+    | Unbounded stream (days+) | Restart dedup periodically or use database |
+    | High-cardinality keys | Monitor memory usage |
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | ~50,000-100,000 events/sec | Depends on key extraction |
+    | Memory | Grows with unique keys | See memory table above |
+    | Latency | < 1 ms per event | Hash map lookup |
+
+    ---
+
+    ## Use Cases
+
+    - **Idempotent processing** — Ensure each event processed once
+    - **Remove stream duplicates** — From unreliable sources
+    - **Track unique entities** — First occurrence of each account/contract
+    - **Exactly-once semantics** — In event-driven pipelines
+    - **Testing/debugging** — Reduce duplicate noise
+
+    ---
+
+    ## Common Pipelines
+
+    **1. Idempotent database inserts:**
+    ```bash
+    token-transfer --start-ledger 60200000 --follow | \
+      dedup --key meta.txHash | \
+      postgres-sink --table transfers --conflict ignore
+    ```
+
+    **2. Unique USDC senders:**
+    ```bash
+    token-transfer --start-ledger 60200000 --end-ledger 60300000 | \
+      usdc-filter | \
+      jq -c '{sender: .transfer.from}' | \
+      dedup --key sender | \
+      json-file-sink --out unique-senders.jsonl
+    ```
+
+    **3. First transfer per contract:**
+    ```bash
+    contract-events --start-ledger 60200000 --end-ledger 60300000 | \
+      jq 'select(.eventType == "transfer")' | \
+      dedup --key contractId | \
+      json-file-sink --out first-transfers.jsonl
+    ```
+
+    **4. Periodic restart for long streams:**
+    ```bash
+    # Restart every hour to bound memory
+    while true; do
+      timeout 3600 sh -c '
+        token-transfer --start-ledger $(cat last-ledger.txt) --follow | \
+          dedup --key meta.txHash | \
+          tee >(jq -r ".meta.ledgerSequence" | tail -1 > last-ledger.txt) | \
+          postgres-sink --table transfers
+      '
+    done
+    ```
+
+    ---
+
+    ## Comparison with Database Deduplication
+
+    | Approach | Pros | Cons |
+    |----------|------|------|
+    | **dedup processor** | Fast, no external deps | Memory grows, not persistent |
+    | **postgres-sink --conflict ignore** | Persistent, unlimited scale | Requires database, slower |
+    | **Redis-backed dedup** | Persistent, shared state | Requires Redis, more complex |
+
+    **Recommendation:**
+    - Use dedup for short-to-medium batches
+    - Use postgres-sink `--conflict ignore` for production streams
+    - Combine both for belt-and-suspenders approach
+
+    ---
+
+    ## Limitations
+
+    - In-memory only (no persistence across restarts)
+    - Memory grows unbounded with unique keys
+    - Single key field only (no composite keys without jq preprocessing)
+    - First-occurrence wins (no update/replace semantics)
+    - Not distributed (single-process dedup only)
+
+    ---
+
+    ## Best Practices
+
+    1. **Choose stable keys:** Use transaction hash or unique IDs
+    2. **Monitor memory:** Watch process memory for long-running jobs
+    3. **Bounded batches:** Use end-ledger for predictable memory usage
+    4. **Combine with database:** Use dedup + postgres conflict handling
+    5. **Periodic restart:** For unbounded streams, restart hourly/daily
+    6. **Composite keys:** Use jq to create composite keys if needed

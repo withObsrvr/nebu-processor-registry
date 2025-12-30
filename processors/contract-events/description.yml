@@ -9,7 +9,7 @@ processor:
     - withObsrvr
 
 repo:
-  github: withObsrvr/nebu
+  github: withObsrvr/nebu-processor-registry
   ref: main
 
 # Protocol buffer definitions
@@ -66,73 +66,335 @@ docs:
       contract-events --start-ledger 60200000 --end-ledger 60200100
 
   extended_description: |
-    Contract Events Origin Processor
+    # Contract Events Origin Processor
 
     This processor extracts and decodes Soroban contract events from Stellar ledgers,
     emitting structured events with decoded topics and data. Perfect for indexing
     smart contract activity, tracking specific events, or building event-driven applications.
 
-    **What it does:**
-    - Consumes Stellar ledger data from RPC endpoints
-    - Extracts all contract events from Soroban transactions
-    - Decodes event topics and data from XDR to JSON
-    - Emits structured JSON events with schema versioning
-    - Tracks event metadata (ledger, transaction, operation, event index)
+    ---
 
-    **Event Types Captured:**
-    - CONTRACT: User-defined contract events
-    - SYSTEM: System events (transfers, mints, burns)
-    - DIAGNOSTIC: Debug events emitted during execution
+    ## Event Types
 
-    **Event Structure:**
-    Each event includes:
-    - `contractId`: The contract that emitted the event
-    - `eventType`: Decoded event type from topics
-    - `topicDecoded`: Decoded event topics (names/values)
-    - `dataDecoded`: Decoded event data
-    - `inSuccessfulTx`: Whether the parent transaction succeeded
-    - `ledgerSequence`, `txHash`, `transactionIndex`, `operationIndex`, `eventIndex`
+    | Event Type | Purpose | Key Fields |
+    |------------|---------|------------|
+    | **CONTRACT** | User-defined contract events | `contractId`, `topics`, `data` |
+    | **SYSTEM** | Token operations (transfer, mint, burn) | `contractId`, `eventType`, `topics`, `data` |
+    | **DIAGNOSTIC** | Debug events during execution | `contractId`, `topics`, `data`, `inSuccessfulTx` |
 
-    **Performance:**
-    - Processes ~50-100 ledgers/second (depends on contract activity)
-    - Memory usage: ~100-200MB for typical workloads
-    - Supports streaming for unbounded ranges
+    **Event Type Detection:**
+    - CONTRACT events: Emitted via `env.events().publish()` in contract code
+    - SYSTEM events: Emitted by Stellar Asset Contract (SAC) operations
+    - DIAGNOSTIC events: Debug output, only available on failed transactions
 
-    **Configuration:**
-    - `--start-ledger`: Starting ledger sequence (required)
-    - `--end-ledger`: Ending ledger sequence (optional)
-    - `--rpc-url`: Custom RPC endpoint
-    - `--network`: Network passphrase (mainnet, testnet, or custom)
-    - `-q, --quiet`: Suppress startup banner
+    ---
+
+    ## Event Structure Fields
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `contractId` | string | Contract address (C...) that emitted the event |
+    | `type` | string | Event type: CONTRACT, SYSTEM, or DIAGNOSTIC |
+    | `eventType` | string | Decoded first topic (e.g., "transfer", "mint") |
+    | `topics` | ScVal[] | Raw event topics as decoded ScVal objects |
+    | `topicsDecoded` | object[] | Human-readable topic values |
+    | `data` | ScVal | Raw event data as decoded ScVal object |
+    | `dataDecoded` | object | Human-readable event data |
+    | `inSuccessfulTx` | bool | Whether parent transaction succeeded |
+
+    ---
+
+    ## Event Metadata Fields
+
+    Each event includes chronological context in the `meta` field:
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `ledgerSequence` | uint32 | Ledger number for ordering |
+    | `txHash` | string | Transaction identifier (hex-encoded) |
+    | `transactionIndex` | uint32 | Position of transaction within ledger |
+    | `operationIndex` | uint32 | Position of operation within transaction |
+    | `eventIndex` | uint32 | Position of event within operation |
+    | `timestamp` | string | Ledger close time (ISO 8601 format) |
+
+    ---
+
+    ## Proto Schema
+
+    ```protobuf
+    message ContractEvent {
+      string contract_id = 1;           // Contract address (C...)
+      EventType type = 2;               // CONTRACT, SYSTEM, or DIAGNOSTIC
+      string event_type = 3;            // Decoded first topic
+      repeated ScVal topics = 4;        // Raw topics
+      repeated DecodedValue topics_decoded = 5;
+      ScVal data = 6;                   // Raw data
+      DecodedValue data_decoded = 7;
+      bool in_successful_tx = 8;        // Transaction success
+      EventMeta meta = 10;
+    }
+
+    enum EventType {
+      CONTRACT = 0;
+      SYSTEM = 1;
+      DIAGNOSTIC = 2;
+    }
+
+    message DecodedValue {
+      string type = 1;                  // ScVal type name
+      oneof value {
+        string string_value = 2;
+        int64 int_value = 3;
+        bytes bytes_value = 4;
+        string address_value = 5;
+        bool bool_value = 6;
+      }
+    }
+
+    message ScVal {
+      // Full Stellar ScVal representation
+      // See: stellar/go/xdr for complete definition
+    }
+
+    message EventMeta {
+      uint32 ledger_sequence = 1;
+      string tx_hash = 2;
+      uint32 transaction_index = 3;
+      uint32 operation_index = 4;
+      uint32 event_index = 5;
+      string timestamp = 6;
+    }
+    ```
+
+    ---
+
+    ## Example Event Payloads
+
+    **CONTRACT Event (User-Defined):**
+    ```json
+    {
+      "_schema": "nebu.contract_events.v1",
+      "_nebu_version": "1.0.0",
+      "contractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      "type": "CONTRACT",
+      "eventType": "swap",
+      "topicsDecoded": [
+        {"type": "symbol", "symbolValue": "swap"},
+        {"type": "address", "addressValue": "GAIT2WQETHTXS5LBXQ5XSMMSLZMXCXAYOFDLNPNQWG2DRJXJXJXRPC7A"}
+      ],
+      "dataDecoded": {
+        "type": "map",
+        "mapValue": {
+          "amount_in": {"type": "i128", "i128Value": "1000000000"},
+          "amount_out": {"type": "i128", "i128Value": "950000000"},
+          "token_in": {"type": "address", "addressValue": "CCW67..."},
+          "token_out": {"type": "address", "addressValue": "CDMLFM..."}
+        }
+      },
+      "inSuccessfulTx": true,
+      "meta": {
+        "ledgerSequence": 60200001,
+        "txHash": "abc123def456789012345678901234567890123456789012345678901234",
+        "transactionIndex": 3,
+        "operationIndex": 0,
+        "eventIndex": 0,
+        "timestamp": "2024-12-10T14:30:00Z"
+      }
+    }
+    ```
+
+    **SYSTEM Event (SAC Transfer):**
+    ```json
+    {
+      "_schema": "nebu.contract_events.v1",
+      "_nebu_version": "1.0.0",
+      "contractId": "CDMLFMKMMD7MWZP3FGMUZRSAVCF3TZ5HVJ6GH23QS6Y5EO3FLPV5RADD",
+      "type": "SYSTEM",
+      "eventType": "transfer",
+      "topicsDecoded": [
+        {"type": "symbol", "symbolValue": "transfer"},
+        {"type": "address", "addressValue": "GAIT2WQETHTXS5LBXQ5XSMMSLZMXCXAYOFDLNPNQWG2DRJXJXJXRPC7A"},
+        {"type": "address", "addressValue": "GBXRV5PKTOTZXQBJQTA5GXSXMCMCPRLGKDSJV4KTJFKCXJXPJXJXJXJX"}
+      ],
+      "dataDecoded": {
+        "type": "i128",
+        "i128Value": "10000000000"
+      },
+      "inSuccessfulTx": true,
+      "meta": {
+        "ledgerSequence": 60200002,
+        "txHash": "def456abc789012345678901234567890123456789012345678901234567",
+        "transactionIndex": 5,
+        "operationIndex": 0,
+        "eventIndex": 1,
+        "timestamp": "2024-12-10T14:30:05Z"
+      }
+    }
+    ```
+
+    **DIAGNOSTIC Event (Failed Transaction):**
+    ```json
+    {
+      "_schema": "nebu.contract_events.v1",
+      "_nebu_version": "1.0.0",
+      "contractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      "type": "DIAGNOSTIC",
+      "eventType": "fn_call",
+      "topicsDecoded": [
+        {"type": "symbol", "symbolValue": "fn_call"},
+        {"type": "bytes", "bytesValue": "transfer"}
+      ],
+      "dataDecoded": {
+        "type": "vec",
+        "vecValue": [
+          {"type": "address", "addressValue": "GAIT2..."},
+          {"type": "i128", "i128Value": "999999999999999"}
+        ]
+      },
+      "inSuccessfulTx": false,
+      "meta": {
+        "ledgerSequence": 60200003,
+        "txHash": "789abc012345678901234567890123456789012345678901234567890123",
+        "transactionIndex": 7,
+        "operationIndex": 0,
+        "eventIndex": 0,
+        "timestamp": "2024-12-10T14:30:10Z"
+      }
+    }
+    ```
+
+    ---
+
+    ## Event Ordering
+
+    Events are emitted in strict chronological order within each ledger:
+
+    1. **Ledger sequence** — Events ordered by ledger number
+    2. **Transaction index** — Within ledger, ordered by transaction position
+    3. **Operation index** — Within transaction, ordered by operation position
+    4. **Event index** — Within operation, ordered by emission sequence
+
+    **Ordering Guarantees:**
+    - Events from the same contract appear in emission order
+    - SYSTEM events appear after their triggering operation
+    - DIAGNOSTIC events only appear for failed transactions
+    - Idempotent replay produces identical event order
+
+    **Filtering by Success:**
+    ```bash
+    # Only successful transaction events
+    contract-events --start-ledger 60200000 | jq 'select(.inSuccessfulTx == true)'
+
+    # Only failed transaction events (includes diagnostics)
+    contract-events --start-ledger 60200000 | jq 'select(.inSuccessfulTx == false)'
+    ```
+
+    ---
+
+    ## Operational Modes
+
+    **Bounded Mode (Backfill):**
+    ```bash
+    contract-events --start-ledger 60200000 --end-ledger 60200100
+    ```
+    - Processes specified range and exits
+    - Best for: Historical data backfills, batch analysis
+    - Memory: Constant regardless of range size
+
+    **Unbounded Mode (Streaming):**
+    ```bash
+    contract-events --start-ledger 60200000  # No end-ledger
+    ```
+    - Processes from start ledger to current, then follows new ledgers
+    - Best for: Real-time event monitoring, live dashboards
+    - Memory: Constant (streaming mode)
+
+    ---
+
+    ## Configuration
+
+    **Command-Line Flags:**
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--start-ledger` | Starting ledger sequence (required) | — |
+    | `--end-ledger` | Ending ledger sequence | Latest (streaming) |
+    | `--rpc-url` | Stellar RPC endpoint URL | Public RPC |
+    | `--network` | Network passphrase | Mainnet |
+    | `-q, --quiet` | Suppress startup banner | false |
 
     **Environment Variables:**
-    - `NEBU_RPC_URL`: RPC endpoint URL
-    - `NEBU_NETWORK`: Network passphrase
-    - `NEBU_RPC_AUTH`: Authorization header (e.g., "Api-Key XXX")
 
-    **Output Format:**
-    All events include schema versioning:
-    - `_schema`: "nebu.contract_events.v1"
-    - `_nebu_version`: Runtime version
+    | Variable | Description |
+    |----------|-------------|
+    | `NEBU_RPC_URL` | RPC endpoint URL (overridden by --rpc-url) |
+    | `NEBU_NETWORK` | Network passphrase (overridden by --network) |
+    | `NEBU_RPC_AUTH` | Authorization header (e.g., "Api-Key XXX") |
 
-    **Use Cases:**
-    - Index all events from a specific contract
-    - Track token transfers, mints, burns across contracts
-    - Build event-driven applications responding to contract state changes
-    - Analyze contract activity patterns
-    - Debug contract behavior by examining diagnostic events
+    ---
 
-    **Dependencies:**
-    - Stellar Go SDK (github.com/stellar/go)
-    - Protocol Buffers for event types
+    ## Performance
 
-    **Limitations:**
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | 50-100 ledgers/sec | Depends on contract activity |
+    | Memory | 100-200 MB | Includes decoded event data |
+    | Latency | ~1 second | From ledger close to event emit |
+
+    ---
+
+    ## ScVal Type Reference
+
+    Common ScVal types encountered in event topics and data:
+
+    | ScVal Type | JSON Field | Example |
+    |------------|------------|---------|
+    | Symbol | `symbolValue` | `"transfer"`, `"mint"` |
+    | Address | `addressValue` | `"GAIT2..."`, `"CDLZ..."` |
+    | I128 | `i128Value` | `"1000000000"` (as string) |
+    | U128 | `u128Value` | `"1000000000"` (as string) |
+    | String | `stringValue` | `"hello"` |
+    | Bytes | `bytesValue` | Base64 encoded |
+    | Bool | `boolValue` | `true`, `false` |
+    | Vec | `vecValue` | `[...]` array of ScVal |
+    | Map | `mapValue` | `{...}` key-value pairs |
+
+    For complete ScVal documentation, see [Stellar ScVal Reference](https://developers.stellar.org/docs/learn/smart-contract-internals/types/built-in-types).
+
+    ---
+
+    ## Use Cases
+
+    - **Index contract events** — Build searchable event history
+    - **Track token operations** — Monitor SAC transfer, mint, burn events
+    - **Debug contracts** — Analyze diagnostic events from failed transactions
+    - **Build event-driven apps** — React to specific contract events in real-time
+    - **Analytics dashboards** — Aggregate event data for visualization
+    - **Audit trails** — Complete record of contract interactions
+
+    ---
+
+    ## Dependencies
+
+    - Stellar Go SDK (`github.com/stellar/go`)
+    - Protocol Buffers runtime
+    - Access to Stellar RPC endpoint with Soroban support
+
+    ---
+
+    ## Limitations
+
     - Requires Stellar RPC endpoint with Soroban support
     - Event decoding is best-effort (unknown types returned as raw XDR)
-    - Diagnostic events only available if transaction failed or in debug mode
+    - Diagnostic events only available for failed transactions
+    - Historical data availability depends on RPC endpoint retention
 
-    **Best Practices:**
-    - Use quiet mode (`-q`) when piping to other processors
-    - Filter for specific contracts early to reduce data volume
-    - Use authenticated RPC endpoints for production workloads
-    - Consider piping to postgres-sink for queryable event history
+    ---
+
+    ## Best Practices
+
+    1. **Pipeline Usage:** Use quiet mode (`-q`) when piping to other processors
+    2. **Filter Early:** Filter for specific contracts/events to reduce data volume
+    3. **Production Workloads:** Use authenticated RPC endpoints
+    4. **Event Storage:** Pipe to postgres-sink for queryable event history
+    5. **Real-Time Monitoring:** Use unbounded mode with nats-sink for distribution

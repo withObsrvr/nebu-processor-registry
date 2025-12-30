@@ -8,6 +8,9 @@ if [ -z "$PROCESSOR_DIR" ]; then
     exit 1
 fi
 
+# Convert to absolute path
+PROCESSOR_DIR=$(cd "$PROCESSOR_DIR" && pwd)
+
 DESCRIPTION_FILE="$PROCESSOR_DIR/description.yml"
 
 if [ ! -f "$DESCRIPTION_FILE" ]; then
@@ -25,44 +28,41 @@ else
     exit 1
 fi
 
-# Extract repository information
-GITHUB_REPO=$($YQ eval '.repo.github' "$DESCRIPTION_FILE")
-GIT_REF=$($YQ eval '.repo.ref' "$DESCRIPTION_FILE")
+# Extract processor information
 PROCESSOR_NAME=$($YQ eval '.processor.name' "$DESCRIPTION_FILE")
 LANGUAGE=$($YQ eval '.processor.language' "$DESCRIPTION_FILE")
 
 echo "Building processor: $PROCESSOR_NAME"
-echo "Repository: https://github.com/$GITHUB_REPO"
-echo "Reference: $GIT_REF"
+echo "Directory: $PROCESSOR_DIR"
 echo "Language: $LANGUAGE"
-
-# Create temporary directory for cloning
-TEMP_DIR=$(mktemp -d)
-trap "rm -rf $TEMP_DIR" EXIT
-
-# Clone the repository
-echo "Cloning repository..."
-git clone --quiet "https://github.com/$GITHUB_REPO" "$TEMP_DIR/repo"
-cd "$TEMP_DIR/repo"
-
-# Checkout specific ref
-echo "Checking out $GIT_REF..."
-git checkout --quiet "$GIT_REF"
 
 # Build based on language
 case "$LANGUAGE" in
     Go|go)
         echo "Building Go processor..."
 
-        # Check for cmd/main.go or main.go
-        if [ -f "cmd/main.go" ]; then
-            cd cmd
-        elif [ ! -f "main.go" ]; then
-            echo "❌ Error: No main.go found in repository"
+        # Check for go.mod in processor directory
+        if [ ! -f "$PROCESSOR_DIR/go.mod" ]; then
+            echo "❌ Error: No go.mod found in $PROCESSOR_DIR"
             exit 1
         fi
 
-        # Try to build
+        # Find main.go location
+        if [ -d "$PROCESSOR_DIR/cmd/$PROCESSOR_NAME" ] && [ -f "$PROCESSOR_DIR/cmd/$PROCESSOR_NAME/main.go" ]; then
+            BUILD_DIR="$PROCESSOR_DIR/cmd/$PROCESSOR_NAME"
+        elif [ -f "$PROCESSOR_DIR/cmd/main.go" ]; then
+            BUILD_DIR="$PROCESSOR_DIR/cmd"
+        elif [ -f "$PROCESSOR_DIR/main.go" ]; then
+            BUILD_DIR="$PROCESSOR_DIR"
+        else
+            echo "❌ Error: No main.go found (checked cmd/$PROCESSOR_NAME/main.go, cmd/main.go, main.go)"
+            exit 1
+        fi
+
+        echo "Build directory: $BUILD_DIR"
+
+        # Build the processor
+        cd "$BUILD_DIR"
         if ! go build -o "/tmp/$PROCESSOR_NAME" .; then
             echo "❌ Error: Go build failed"
             exit 1
@@ -76,19 +76,22 @@ case "$LANGUAGE" in
         else
             echo "✓ Processor responds to --help"
         fi
+
+        # Clean up binary
+        rm -f "/tmp/$PROCESSOR_NAME"
         ;;
 
     Python|python)
         echo "Validating Python processor..."
 
         # Check for main file
-        if [ ! -f "main.py" ] && [ ! -f "__main__.py" ]; then
+        if [ ! -f "$PROCESSOR_DIR/main.py" ] && [ ! -f "$PROCESSOR_DIR/__main__.py" ]; then
             echo "❌ Error: No main.py or __main__.py found"
             exit 1
         fi
 
         # Check for requirements.txt or setup.py
-        if [ ! -f "requirements.txt" ] && [ ! -f "setup.py" ] && [ ! -f "pyproject.toml" ]; then
+        if [ ! -f "$PROCESSOR_DIR/requirements.txt" ] && [ ! -f "$PROCESSOR_DIR/setup.py" ] && [ ! -f "$PROCESSOR_DIR/pyproject.toml" ]; then
             echo "⚠️  Warning: No requirements.txt, setup.py, or pyproject.toml found"
         fi
 
@@ -98,11 +101,12 @@ case "$LANGUAGE" in
     Rust|rust)
         echo "Building Rust processor..."
 
-        if [ ! -f "Cargo.toml" ]; then
+        if [ ! -f "$PROCESSOR_DIR/Cargo.toml" ]; then
             echo "❌ Error: No Cargo.toml found"
             exit 1
         fi
 
+        cd "$PROCESSOR_DIR"
         if ! cargo build --release; then
             echo "❌ Error: Cargo build failed"
             exit 1
