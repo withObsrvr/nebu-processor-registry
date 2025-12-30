@@ -61,6 +61,8 @@ Create a transform processor when you need to:
 package main
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
 	"github.com/withObsrvr/nebu/pkg/processor/cli"
 )
@@ -271,6 +273,7 @@ func transformEvent(event map[string]interface{}) (map[string]interface{}, error
 ### Event Enrichment
 
 ```go
+// Note: import "time" required
 func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
 	// Add calculated fields
 	if amount, ok := event["amount"].(float64); ok {
@@ -288,6 +291,7 @@ func transformEvent(event map[string]interface{}) (map[string]interface{}, error
 ### Deduplication
 
 ```go
+// Note: import "time" and "sync" required
 var (
 	cache    = make(map[string]time.Time)
 	cacheMux sync.Mutex

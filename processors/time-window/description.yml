@@ -59,15 +59,15 @@ docs:
     Stellar ledgers close approximately every 5 seconds. This processor uses
     the `meta.timestamp` field (ISO 8601) or estimates time from ledger sequence.
 
-    | Duration | Approximate Ledgers | Calculation |
-    |----------|---------------------|-------------|
-    | 1 minute | ~12 ledgers | 60s ÷ 5s |
-    | 5 minutes | ~60 ledgers | 300s ÷ 5s |
-    | 1 hour | ~720 ledgers | 3600s ÷ 5s |
-    | 6 hours | ~4,320 ledgers | 21600s ÷ 5s |
-    | 24 hours | ~17,280 ledgers | 86400s ÷ 5s |
-    | 7 days | ~120,960 ledgers | 604800s ÷ 5s |
-    | 30 days | ~518,400 ledgers | 2592000s ÷ 5s |
+    | Duration  | Approximate Ledgers | Calculation   |
+    |-----------|---------------------|---------------|
+    | 1 minute  | ~12 ledgers         | 60s ÷ 5s      |
+    | 5 minutes | ~60 ledgers         | 300s ÷ 5s     |
+    | 1 hour    | ~720 ledgers        | 3600s ÷ 5s    |
+    | 6 hours   | ~4,320 ledgers      | 21600s ÷ 5s   |
+    | 24 hours  | ~17,280 ledgers     | 86400s ÷ 5s   |
+    | 7 days    | ~120,960 ledgers    | 604800s ÷ 5s  |
+    | 30 days   | ~518,400 ledgers    | 2592000s ÷ 5s |
 
     ---
 
@@ -93,7 +93,7 @@ docs:
     |--------|----------|---------|
     | `Xm` | X minutes | `30m`, `90m` |
     | `Xh` | X hours | `1h`, `6h`, `24h` |
-    | `Xh` | X days (as hours) | `168h` (7 days), `720h` (30 days) |
+    | `Xh` | X days as hours (Go has no day unit) | `168h` (7 days), `720h` (30 days) |
 
     **Examples:**
     - `--last 30m` — Last 30 minutes

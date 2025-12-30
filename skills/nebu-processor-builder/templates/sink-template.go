@@ -52,14 +52,13 @@ func processEvent(event map[string]interface{}) error {
 	// Example: Batch events (see sink-processors.md for full pattern)
 	// return addToBatch(event)
 
-	// Placeholder implementation
-	data, err := json.Marshal(event)
+	// Placeholder implementation - marshal to verify JSON is valid
+	_, err := json.Marshal(event)
 	if err != nil {
 		return err
 	}
 
-	// TODO: Write data to your sink
-	_ = data
+	// TODO: Write data to your sink (e.g., database, file, message queue)
 
 	return nil
 }
