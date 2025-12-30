@@ -17,15 +17,10 @@ jobs:
       - name: Fetch base branch
         run: git fetch origin ${{ github.base_ref }}
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
         with:
-          go-version: 'gotip'
-
-      - name: Install yq for YAML validation
-        run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
+          nix_path: nixpkgs=channel:nixos-unstable
 
       - name: Find changed processor directories
         id: changed-processors
@@ -45,21 +40,25 @@ jobs:
       - name: Validate processor submissions
         if: steps.changed-processors.outputs.processors != ''
         run: |
-          for processor in ${{ steps.changed-processors.outputs.processors }}; do
-            echo "Validating processor: $processor"
-            bash scripts/validate-processor.sh "processors/$processor"
-          done
+          nix develop --command bash -c '
+            for processor in ${{ steps.changed-processors.outputs.processors }}; do
+              echo "Validating processor: $processor"
+              bash scripts/validate-processor.sh "processors/$processor"
+            done
+          '
 
       - name: Build processors
         if: steps.changed-processors.outputs.processors != ''
         run: |
-          for processor in ${{ steps.changed-processors.outputs.processors }}; do
-            echo "Building processor: $processor"
-            bash scripts/build-processor.sh "processors/$processor"
-          done
+          nix develop --command bash -c '
+            for processor in ${{ steps.changed-processors.outputs.processors }}; do
+              echo "Building processor: $processor"
+              bash scripts/build-processor.sh "processors/$processor"
+            done
+          '
 
       - name: Generate processor list
-        run: bash scripts/generate-list.sh
+        run: nix develop --command bash scripts/generate-list.sh
 
       - name: Comment on PR
         if: failure()
