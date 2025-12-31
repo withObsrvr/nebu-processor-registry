@@ -28,3 +28,5 @@ Thumbs.db
 *.log
 
 docs/shapeup
+.venv
+*.pyc
