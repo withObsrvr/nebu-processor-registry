@@ -975,6 +975,8 @@ message Transfer {
 
 ## Next Steps
 
+### Learn and Build
+
 1. **Study the official processors**:
    - Start with `token-transfer` (simpler)
    - Then `contract-events` (event decoding)
@@ -991,10 +993,32 @@ message Transfer {
    - Create a description.yml
    - Open a pull request
 
-4. **Join the community**:
-   - Share your processor
-   - Help others build processors
-   - Suggest improvements to the guide
+### Graduate to Production
+
+Once your nebu processor is stable and well-tested, you can migrate it to **flowctl** for production deployment with:
+
+- **Control plane orchestration** (health checks, restarts, scaling)
+- **Multi-component pipelines** (source -> processor -> sink chains)
+- **Production monitoring** (metrics, dashboards)
+- **Containerized deployment** (Docker, Kubernetes, Nomad)
+
+**Your proto definitions and core extraction logic stay the same!** Only the wrapper changes from `RunProtoOriginCLI` to `stellar.Run()`.
+
+Read the migration guide: **[GRADUATING_TO_FLOWCTL.md](docs/GRADUATING_TO_FLOWCTL.md)**
+
+### Shared Proto Definitions
+
+For processors that will be used across the ecosystem, consider contributing your proto definitions to the shared repository:
+
+- **flow-proto**: https://github.com/withObsrvr/flow-proto
+
+This enables other developers to consume your event types in their pipelines.
+
+### Join the Community
+
+- Share your processor
+- Help others build processors
+- Suggest improvements to the guide
 
 ---
 
