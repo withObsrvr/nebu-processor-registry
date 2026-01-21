@@ -20,6 +20,12 @@
             gotools
             go-tools
 
+            # Python toolchain
+            python312
+            python312Packages.pip
+            python312Packages.setuptools
+            python312Packages.wheel
+
             # Protobuf tools
             protobuf
             protoc-gen-go
@@ -43,15 +49,23 @@
             # Set GOTOOLCHAIN to auto to allow version switching
             export GOTOOLCHAIN=auto
 
+            # Create a virtual environment for Python packages if it doesn't exist
+            if [ ! -d .venv ]; then
+              python -m venv .venv
+            fi
+            source .venv/bin/activate
+
             echo "🔧 nebu-processor-registry development environment"
             echo ""
             echo "Available tools:"
             echo "  go version: $(go version)"
+            echo "  python version: $(python --version)"
             echo "  yq version: $(yq --version)"
             echo ""
             echo "Quick commands:"
             echo "  ./scripts/build-processor.sh processors/<name>  - Build a processor"
             echo "  ./scripts/validate-processor.sh processors/<name> - Validate processor metadata"
+            echo "  pip install -e mcp/                              - Install MCP server"
             echo ""
           '';
         };
