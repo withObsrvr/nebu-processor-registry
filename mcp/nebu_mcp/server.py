@@ -5,7 +5,6 @@ safe defaults to prevent context overflow.
 """
 
 import asyncio
-from typing import Literal
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -13,7 +12,7 @@ from mcp.types import TextContent, Tool
 
 from .config import DEFAULT_FORMAT, DEFAULT_LIMIT, MAX_LEDGER_RANGE, MAX_LIMIT
 from .tools.discovery import describe_processor, list_processors
-from .tools.extract import extract_events
+from .tools.extract import extract_events, find_processor
 from .tools.fetch import fetch_ledgers
 from .tools.pipeline import run_pipeline
 
@@ -41,8 +40,13 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "ledger": {
                         "type": "integer",
-                        "description": "Single ledger to test",
-                    }
+                        "description": "Single ledger to test (must be positive)",
+                    },
+                    "processor": {
+                        "type": "string",
+                        "description": "Processor to test (default: token-transfer)",
+                        "default": "token-transfer",
+                    },
                 },
                 "required": ["ledger"],
             },
@@ -194,43 +198,66 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         }
 
     elif name == "nebu_debug_extract":
-        import asyncio
         ledger = arguments["ledger"]
-        home = os.path.expanduser("~")
-        processor_path = os.path.join(home, "go", "bin", "token-transfer")
-        cmd = f"{processor_path} --start-ledger {ledger} --end-ledger {ledger} -q 2>&1 | head -3"
+        processor_name = arguments.get("processor", "token-transfer")
 
+        # Validate ledger is a positive integer
         try:
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=30,
-            )
+            ledger_int = int(ledger)
+        except (TypeError, ValueError):
             result = {
-                "command": cmd,
-                "returncode": proc.returncode,
-                "stdout": stdout.decode()[:1000] if stdout else "",
-                "stderr": stderr.decode()[:500] if stderr else "",
+                "error": "Invalid ledger value: must be a positive integer",
+                "ledger": ledger,
             }
-        except asyncio.TimeoutError:
-            result = {
-                "command": cmd,
-                "error": "Timed out after 30s",
-            }
-        except Exception as e:
-            result = {
-                "command": cmd,
-                "error": str(e),
-            }
+        else:
+            if ledger_int <= 0:
+                result = {
+                    "error": "Invalid ledger value: must be a positive integer",
+                    "ledger": ledger_int,
+                }
+            else:
+                # Find the processor binary
+                processor_path = find_processor(processor_name)
+                if not processor_path:
+                    result = {
+                        "error": f"Processor '{processor_name}' not found",
+                        "suggestion": f"Install with: nebu install {processor_name}",
+                    }
+                else:
+                    cmd = f"{processor_path} --start-ledger {ledger_int} --end-ledger {ledger_int} -q 2>&1 | head -3"
+
+                    try:
+                        proc = await asyncio.create_subprocess_shell(
+                            cmd,
+                            stdin=asyncio.subprocess.DEVNULL,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
+                        )
+                        stdout, stderr = await asyncio.wait_for(
+                            proc.communicate(),
+                            timeout=30,
+                        )
+                        result = {
+                            "command": cmd,
+                            "processor": processor_name,
+                            "returncode": proc.returncode,
+                            "stdout": stdout.decode()[:1000] if stdout else "",
+                            "stderr": stderr.decode()[:500] if stderr else "",
+                        }
+                    except asyncio.TimeoutError:
+                        result = {
+                            "command": cmd,
+                            "error": "Timed out after 30s",
+                        }
+                    except Exception as e:
+                        result = {
+                            "command": cmd,
+                            "error": str(e),
+                        }
 
     elif name == "nebu_list_processors":
         proc_type = arguments.get("type", "all")
-        result = await list_processors(proc_type)
+        result = await list_processors(processor_type=proc_type)
 
     elif name == "nebu_describe_processor":
         proc_name = arguments.get("name", "")
@@ -241,9 +268,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             processor=arguments["processor"],
             start_ledger=arguments["start_ledger"],
             end_ledger=arguments["end_ledger"],
-            filter=arguments.get("filter"),
+            jq_filter=arguments.get("filter"),
             limit=arguments.get("limit", DEFAULT_LIMIT),
-            format=arguments.get("format", DEFAULT_FORMAT),
+            output_format=arguments.get("format", DEFAULT_FORMAT),
         )
 
     elif name == "nebu_fetch_ledgers":
@@ -259,7 +286,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             start_ledger=arguments["start_ledger"],
             end_ledger=arguments["end_ledger"],
             limit=arguments.get("limit", DEFAULT_LIMIT),
-            format=arguments.get("format", DEFAULT_FORMAT),
+            output_format=arguments.get("format", DEFAULT_FORMAT),
         )
 
     else:

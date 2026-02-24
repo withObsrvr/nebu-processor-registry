@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from typing import Any, Literal
 
 from ..config import (
@@ -16,13 +17,27 @@ from ..formatters.compact import compact_event
 from ..formatters.summary import summarize_events
 from .extract import EXTRACTION_TIMEOUT, find_processor
 
+# Pattern for validating pipeline components
+# Allows alphanumeric processor names with dashes/underscores and simple arguments
+PIPELINE_FORBIDDEN = re.compile(r'[`$]|&&|;;|>\s*>|<\s*<|[\'"]')
+
+
+def _validate_pipeline(pipeline: str) -> str | None:
+    """Validate pipeline string to prevent command injection.
+
+    Returns None if valid, or an error message if invalid.
+    """
+    if PIPELINE_FORBIDDEN.search(pipeline):
+        return "Invalid pipeline: contains forbidden shell metacharacters"
+    return None
+
 
 async def run_pipeline(
     pipeline: str,
     start_ledger: int,
     end_ledger: int,
     limit: int = DEFAULT_LIMIT,
-    format: Literal["full", "compact", "summary"] = DEFAULT_FORMAT,
+    output_format: Literal["full", "compact", "summary"] = DEFAULT_FORMAT,
 ) -> dict[str, Any]:
     """Run a multi-processor pipeline.
 
@@ -31,21 +46,26 @@ async def run_pipeline(
         start_ledger: First ledger to process
         end_ledger: Last ledger to process (max 100 ledgers per call)
         limit: Maximum events to return (default 100, max 1000)
-        format: Output format (full, compact, summary)
+        output_format: Output format (full, compact, summary)
 
     Returns:
         Pipeline output (limited to prevent context overflow)
     """
     # Validate ledger range
-    ledger_range = end_ledger - start_ledger
-    if ledger_range < 0:
+    ledger_diff = end_ledger - start_ledger
+    if ledger_diff < 0:
         return {"error": "end_ledger must be >= start_ledger"}
 
-    if ledger_range > MAX_LEDGER_RANGE:
+    if ledger_diff > MAX_LEDGER_RANGE:
         return {
-            "error": f"Ledger range too large ({ledger_range}). Maximum is {MAX_LEDGER_RANGE} ledgers per call.",
+            "error": f"Ledger range too large ({ledger_diff}). Maximum is {MAX_LEDGER_RANGE} ledgers per call.",
             "suggestion": f"Try a smaller range: start={start_ledger} end={start_ledger + MAX_LEDGER_RANGE}",
         }
+
+    # Validate pipeline for security
+    pipeline_error = _validate_pipeline(pipeline)
+    if pipeline_error:
+        return {"error": pipeline_error}
 
     # Enforce limit
     limit = min(limit, MAX_LIMIT)
@@ -95,6 +115,7 @@ async def run_pipeline(
 
     # Execute command with timeout using async subprocess
     # IMPORTANT: stdin=DEVNULL prevents subprocess from waiting on MCP's stdin
+    proc = None
     try:
         proc = await asyncio.create_subprocess_shell(
             cmd,
@@ -110,8 +131,9 @@ async def run_pipeline(
         stderr_str = stderr.decode() if stderr else ""
         returncode = proc.returncode
     except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
+        if proc:
+            proc.kill()
+            await proc.wait()
         return {
             "error": f"Pipeline timed out after {EXTRACTION_TIMEOUT}s",
             "suggestion": "Try a smaller ledger range or simpler pipeline",
@@ -120,31 +142,42 @@ async def run_pipeline(
     if returncode != 0:
         return {"error": f"Pipeline failed: {stderr_str.strip()}"}
 
-    # Parse events
+    # Parse events, tracking malformed lines
     events = []
+    malformed_count = 0
     for line in stdout_str.strip().split("\n"):
         if line:
             try:
                 events.append(json.loads(line))
             except json.JSONDecodeError:
-                continue  # Skip malformed lines
+                malformed_count += 1
 
     # Format output
     truncated = len(events) >= limit
 
-    if format == FORMAT_SUMMARY:
-        return summarize_events(events, start_ledger, end_ledger, limit)
-    elif format == FORMAT_COMPACT:
+    base_result: dict[str, Any] = {
+        "count": len(events),
+        "pipeline": pipeline,
+        "truncated": truncated,
+    }
+
+    # Include malformed count if any were skipped
+    if malformed_count > 0:
+        base_result["malformed_lines_skipped"] = malformed_count
+
+    if output_format == FORMAT_SUMMARY:
+        result = summarize_events(events, start_ledger, end_ledger, limit)
+        result["pipeline"] = pipeline
+        if malformed_count > 0:
+            result["malformed_lines_skipped"] = malformed_count
+        return result
+    elif output_format == FORMAT_COMPACT:
         return {
             "events": [compact_event(e) for e in events],
-            "count": len(events),
-            "pipeline": pipeline,
-            "truncated": truncated,
+            **base_result,
         }
     else:  # full
         return {
             "events": events,
-            "count": len(events),
-            "pipeline": pipeline,
-            "truncated": truncated,
+            **base_result,
         }

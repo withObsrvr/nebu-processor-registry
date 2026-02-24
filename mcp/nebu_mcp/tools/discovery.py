@@ -4,21 +4,29 @@ import json
 import subprocess
 from typing import Any, Literal
 
+# Timeout for discovery commands (seconds)
+DISCOVERY_TIMEOUT = 30
+
 
 async def list_processors(
-    type: Literal["origin", "transform", "sink", "all"] = "all",
+    processor_type: Literal["origin", "transform", "sink", "all"] = "all",
 ) -> dict[str, Any]:
     """List available processors for Stellar data extraction.
 
     Args:
-        type: Filter by processor type (origin, transform, sink, or all)
+        processor_type: Filter by processor type (origin, transform, sink, or all)
 
     Returns:
         List of processors with name, type, and description
     """
     cmd = ["nebu", "list", "--json"]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=DISCOVERY_TIMEOUT
+        )
+    except subprocess.TimeoutExpired:
+        return {"error": f"Command timed out after {DISCOVERY_TIMEOUT}s"}
 
     if result.returncode != 0:
         return {"error": f"Failed to list processors: {result.stderr}"}
@@ -29,8 +37,8 @@ async def list_processors(
         return {"error": f"Failed to parse processor list: {e}"}
 
     # Filter by type if specified
-    if type != "all":
-        processors = [p for p in processors if p.get("type") == type]
+    if processor_type != "all":
+        processors = [p for p in processors if p.get("type") == processor_type]
 
     # Return simplified list
     return {
@@ -57,7 +65,12 @@ async def describe_processor(name: str) -> dict[str, Any]:
     """
     cmd = ["nebu", "describe", name, "--json"]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=DISCOVERY_TIMEOUT
+        )
+    except subprocess.TimeoutExpired:
+        return {"error": f"Command timed out after {DISCOVERY_TIMEOUT}s"}
 
     if result.returncode != 0:
         # Try to extract helpful error message
