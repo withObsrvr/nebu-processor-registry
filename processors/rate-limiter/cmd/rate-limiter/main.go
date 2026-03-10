@@ -49,6 +49,10 @@ func addFlags(cmd *cobra.Command) {
 
 // rateLimit passes events through at a controlled rate using a token bucket.
 func rateLimit(event map[string]interface{}) map[string]interface{} {
+	if rate <= 0 {
+		return event
+	}
+
 	if !started {
 		started = true
 		lastTime = time.Now()

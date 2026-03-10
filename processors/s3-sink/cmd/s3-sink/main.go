@@ -146,8 +146,12 @@ func processEvent(event map[string]interface{}) error {
 		if gzWriter == nil {
 			gzWriter = gzip.NewWriter(&buffer)
 		}
-		gzWriter.Write(data)
-		gzWriter.Write([]byte("\n"))
+		if _, err := gzWriter.Write(data); err != nil {
+			return fmt.Errorf("gzip write failed: %w", err)
+		}
+		if _, err := gzWriter.Write([]byte("\n")); err != nil {
+			return fmt.Errorf("gzip write failed: %w", err)
+		}
 	} else {
 		buffer.Write(data)
 		buffer.Write([]byte("\n"))
@@ -169,7 +173,9 @@ func flushBufferLocked() error {
 
 	// Close gzip writer to finalize
 	if gzWriter != nil {
-		gzWriter.Close()
+		if err := gzWriter.Close(); err != nil {
+			return fmt.Errorf("gzip close failed: %w", err)
+		}
 		gzWriter = nil
 	}
 

@@ -46,6 +46,11 @@ func addFlags(cmd *cobra.Command) {
 
 // filterByAsset filters events to only include those matching specified assets.
 func filterByAsset(event map[string]interface{}) map[string]interface{} {
+	// No filters configured — pass everything through
+	if len(assetCodes) == 0 && !nativeOnly {
+		return event
+	}
+
 	// Build a set of codes to match
 	codeSet := make(map[string]bool, len(assetCodes))
 	for _, c := range assetCodes {

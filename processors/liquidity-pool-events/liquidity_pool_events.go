@@ -129,8 +129,8 @@ func (o *Origin) processDeposit(
 		PoolId:  poolID,
 		Account: account,
 		Assets: []*PoolAsset{
-			{Amount: fmt.Sprintf("%d", deposit.MaxAmountA)},
-			{Amount: fmt.Sprintf("%d", deposit.MaxAmountB)},
+			{Amount: "0"},
+			{Amount: "0"},
 		},
 		Meta: &EventMeta{
 			LedgerSequence:   sequence,
@@ -169,8 +169,8 @@ func (o *Origin) processWithdraw(
 		Account: account,
 		Shares:  fmt.Sprintf("%d", withdraw.Amount),
 		Assets: []*PoolAsset{
-			{Amount: fmt.Sprintf("%d", withdraw.MinAmountA)},
-			{Amount: fmt.Sprintf("%d", withdraw.MinAmountB)},
+			{Amount: "0"},
+			{Amount: "0"},
 		},
 		Meta: &EventMeta{
 			LedgerSequence:   sequence,
@@ -302,7 +302,7 @@ func (o *Origin) enrichFromChanges(tx ingest.LedgerTransaction, poolID string, e
 			}
 		}
 
-		// Enrich asset info
+		// Enrich asset info and compute actual amounts from reserve deltas
 		params := postBody
 		if params == nil {
 			params = preBody
@@ -317,6 +317,20 @@ func (o *Origin) enrichFromChanges(tx ingest.LedgerTransaction, poolID string, e
 				event.Assets[1].AssetType = assetB.AssetType
 				event.Assets[1].AssetCode = assetB.AssetCode
 				event.Assets[1].AssetIssuer = assetB.AssetIssuer
+
+				// Compute actual amounts from reserve deltas
+				if change.Pre != nil && change.Post != nil {
+					deltaA := postReserveA - preReserveA
+					deltaB := postReserveB - preReserveB
+					if deltaA < 0 {
+						deltaA = -deltaA
+					}
+					if deltaB < 0 {
+						deltaB = -deltaB
+					}
+					event.Assets[0].Amount = fmt.Sprintf("%d", deltaA)
+					event.Assets[1].Amount = fmt.Sprintf("%d", deltaB)
+				}
 			}
 		}
 

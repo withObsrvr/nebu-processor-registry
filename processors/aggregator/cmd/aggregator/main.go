@@ -17,7 +17,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -234,12 +233,3 @@ func toFloat64(val interface{}) float64 {
 	return 0
 }
 
-func init() {
-	// Flush remaining buckets on exit
-	go func() {
-		// Wait for stdin to close (RunTransformCLI handles this)
-		// On process exit, print any remaining buckets to stderr as warning
-		c := make(chan os.Signal, 1)
-		_ = c
-	}()
-}

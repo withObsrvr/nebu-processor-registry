@@ -90,6 +90,7 @@ func setupCleanup() {
 }
 
 func cleanup() {
+	close(done)
 	if flushTicker != nil {
 		flushTicker.Stop()
 	}
@@ -189,12 +190,12 @@ func sendWithRetry(data []byte) error {
 		}
 		if attempt < totalAttempts {
 			backoff := exponentialBackoff(attempt, retryBackoff)
-			fmt.Fprintf(os.Stderr, "Webhook POST failed (attempt %d/%d), retrying in %v: %v\n",
-				attempt, totalAttempts, backoff, lastErr)
+			fmt.Fprintf(os.Stderr, "Webhook %s failed (attempt %d/%d), retrying in %v: %v\n",
+				method, attempt, totalAttempts, backoff, lastErr)
 			time.Sleep(backoff)
 		}
 	}
-	return fmt.Errorf("webhook POST failed after %d attempts: %w", totalAttempts, lastErr)
+	return fmt.Errorf("webhook %s failed after %d attempts: %w", method, totalAttempts, lastErr)
 }
 
 func sendRequest(data []byte) error {
@@ -233,6 +234,9 @@ func sendRequest(data []byte) error {
 }
 
 func startFlushTicker() {
+	if flushInterval <= 0 {
+		flushInterval = 5 * time.Second
+	}
 	flushTicker = time.NewTicker(flushInterval)
 	go func() {
 		for {
@@ -253,8 +257,15 @@ func startFlushTicker() {
 }
 
 func exponentialBackoff(attempt int, base time.Duration) time.Duration {
+	if base <= 0 {
+		base = time.Second
+	}
 	backoff := base * time.Duration(math.Pow(2, float64(attempt-1)))
-	jitter := time.Duration(rand.Int63n(int64(backoff) / 4))
+	jitterMax := int64(backoff) / 4
+	if jitterMax <= 0 {
+		jitterMax = 1
+	}
+	jitter := time.Duration(rand.Int63n(jitterMax))
 	return backoff + jitter
 }
 

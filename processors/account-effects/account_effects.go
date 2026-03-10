@@ -180,33 +180,8 @@ func (o *Origin) extractEffects(op xdr.Operation, account string, meta *EventMet
 		}
 
 	case xdr.OperationTypeChangeTrust:
-		changeTrust := op.Body.MustChangeTrustOp()
-		var effectType string
-		if changeTrust.Limit == 0 {
-			effectType = "trustline_removed"
-		} else {
-			effectType = "trustline_updated"
-		}
-		details := map[string]interface{}{
-			"limit": fmt.Sprintf("%d", changeTrust.Limit),
-		}
-		if changeTrust.Line.Type == xdr.AssetTypeAssetTypeCreditAlphanum4 {
-			a := changeTrust.Line.MustAlphaNum4()
-			details["assetCode"] = strings.TrimRight(string(a.AssetCode[:]), "\x00")
-			details["assetIssuer"] = a.Issuer.Address()
-		} else if changeTrust.Line.Type == xdr.AssetTypeAssetTypeCreditAlphanum12 {
-			a := changeTrust.Line.MustAlphaNum12()
-			details["assetCode"] = strings.TrimRight(string(a.AssetCode[:]), "\x00")
-			details["assetIssuer"] = a.Issuer.Address()
-		} else if changeTrust.Line.Type == xdr.AssetTypeAssetTypePoolShare {
-			details["poolShare"] = true
-		}
-		effects = append(effects, &AccountEffect{
-			Type:    effectType,
-			Account: account,
-			Details: toJSON(details),
-			Meta:    meta,
-		})
+		// Trustline effects (created/updated/removed) are derived from ledger
+		// entry changes in extractChangeEffects to avoid duplicate events.
 
 	case xdr.OperationTypeManageSellOffer:
 		offerOp := op.Body.MustManageSellOfferOp()
@@ -279,32 +254,70 @@ func (o *Origin) extractChangeEffects(
 	}
 
 	for _, change := range changes {
-		// Trustline created from change (covers cases not caught by operation inspection)
-		if change.Type == xdr.LedgerEntryTypeTrustline &&
-			change.ChangeType == xdr.LedgerEntryChangeTypeLedgerEntryCreated &&
-			change.Post != nil {
+		meta := &EventMeta{
+			LedgerSequence:   sequence,
+			ClosedAtUnix:     closeTime,
+			TxHash:           txHash,
+			TransactionIndex: txIndex,
+			InSuccessfulTx:   successful,
+		}
 
-			tl := change.Post.Data.MustTrustLine()
-			details := map[string]interface{}{
-				"limit": fmt.Sprintf("%d", tl.Limit),
+		switch change.Type {
+		case xdr.LedgerEntryTypeTrustline:
+			switch change.ChangeType {
+			case xdr.LedgerEntryChangeTypeLedgerEntryCreated:
+				if change.Post != nil {
+					tl := change.Post.Data.MustTrustLine()
+					details := map[string]interface{}{
+						"limit": fmt.Sprintf("%d", tl.Limit),
+					}
+					assetCode, assetIssuer := trustlineAssetInfo(tl.Asset)
+					if assetCode != "" {
+						details["assetCode"] = assetCode
+						details["assetIssuer"] = assetIssuer
+					}
+					effects = append(effects, &AccountEffect{
+						Type:    "trustline_created",
+						Account: tl.AccountId.Address(),
+						Details: toJSON(details),
+						Meta:    meta,
+					})
+				}
+			case xdr.LedgerEntryChangeTypeLedgerEntryUpdated:
+				if change.Post != nil {
+					tl := change.Post.Data.MustTrustLine()
+					details := map[string]interface{}{
+						"limit": fmt.Sprintf("%d", tl.Limit),
+					}
+					assetCode, assetIssuer := trustlineAssetInfo(tl.Asset)
+					if assetCode != "" {
+						details["assetCode"] = assetCode
+						details["assetIssuer"] = assetIssuer
+					}
+					effects = append(effects, &AccountEffect{
+						Type:    "trustline_updated",
+						Account: tl.AccountId.Address(),
+						Details: toJSON(details),
+						Meta:    meta,
+					})
+				}
+			case xdr.LedgerEntryChangeTypeLedgerEntryRemoved:
+				if change.Pre != nil {
+					tl := change.Pre.Data.MustTrustLine()
+					details := map[string]interface{}{}
+					assetCode, assetIssuer := trustlineAssetInfo(tl.Asset)
+					if assetCode != "" {
+						details["assetCode"] = assetCode
+						details["assetIssuer"] = assetIssuer
+					}
+					effects = append(effects, &AccountEffect{
+						Type:    "trustline_removed",
+						Account: tl.AccountId.Address(),
+						Details: toJSON(details),
+						Meta:    meta,
+					})
+				}
 			}
-			assetCode, assetIssuer := trustlineAssetInfo(tl.Asset)
-			if assetCode != "" {
-				details["assetCode"] = assetCode
-				details["assetIssuer"] = assetIssuer
-			}
-			effects = append(effects, &AccountEffect{
-				Type:    "trustline_created",
-				Account: tl.AccountId.Address(),
-				Details: toJSON(details),
-				Meta: &EventMeta{
-					LedgerSequence:   sequence,
-					ClosedAtUnix:     closeTime,
-					TxHash:           txHash,
-					TransactionIndex: txIndex,
-					InSuccessfulTx:   successful,
-				},
-			})
 		}
 	}
 
