@@ -1,0 +1,61 @@
+// Protocol buffer definition for contract state processor.
+//
+// This schema defines the output format for contract data state changes
+// extracted from Stellar ledgers.
+
+syntax = "proto3";
+
+package contract_state;
+
+option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/contract-state";
+
+// ContractStateEvent represents a contract data state change in a ledger.
+message ContractStateEvent {
+  // Contract ID (strkey-encoded, C... address)
+  string contract_id = 1;
+
+  // Hash of the ledger key
+  string ledger_key_hash = 2;
+
+  // Durability of the contract data entry
+  Durability durability = 3;
+
+  // Operation type: "create", "update", or "delete"
+  string operation = 4;
+
+  // Key (base64-encoded XDR)
+  string key_xdr = 5;
+
+  // Value (base64-encoded XDR, empty for deletes)
+  string val_xdr = 6;
+
+  // Key symbol (if the key is a simple symbol, extracted for convenience)
+  string key_symbol = 7;
+
+  // Event metadata
+  EventMeta meta = 10;
+}
+
+// Durability of contract data entries
+enum Durability {
+  // Persistent data (survives across ledger boundaries until TTL expires)
+  PERSISTENT = 0;
+
+  // Temporary data (cheaper, shorter TTL)
+  TEMPORARY = 1;
+}
+
+// EventMeta contains chronological context for the event
+message EventMeta {
+  // Ledger sequence number
+  uint32 ledger_sequence = 1;
+
+  // Ledger close timestamp (Unix seconds)
+  int64 closed_at_unix = 2;
+
+  // Transaction hash (hex-encoded)
+  string tx_hash = 3;
+
+  // Transaction index within the ledger
+  uint32 transaction_index = 4;
+}
