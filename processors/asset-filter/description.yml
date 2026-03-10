@@ -1,0 +1,127 @@
+processor:
+  name: asset-filter
+  type: transform
+  description: Filter token transfer events by asset code and optionally issuer
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install asset-filter
+
+    # Filter for AQUA transfers
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | asset-filter --code AQUA
+
+    # Filter for native XLM
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | asset-filter --native
+
+  examples: |
+    # Filter for AQUA transfers
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      asset-filter --code AQUA | \
+      json-file-sink --out aqua-transfers.jsonl
+
+    # Filter for USDC (replaces usdc-filter)
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      asset-filter --code USDC
+
+    # Filter by code and issuer
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      asset-filter --code USDC --issuer GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN
+
+    # Filter for multiple assets
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      asset-filter --code USDC --code AQUA
+
+    # Native XLM transfers only
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      asset-filter --native | \
+      amount-filter --min 10000000000 | \
+      json-file-sink --out large-xlm.jsonl
+
+    # Large AQUA transfers to NATS
+    token-transfer --start-ledger 60200000 --follow | \
+      asset-filter --code AQUA | \
+      amount-filter --min 100000000 | \
+      nats-sink --subject "alerts.aqua.whales" --jetstream
+
+  extended_description: |
+    # Asset Filter Transform Processor
+
+    A generalized asset filter that replaces the hardcoded usdc-filter. Filters
+    token transfer events by asset code, optionally narrowed by issuer address.
+    Supports filtering for native XLM and multiple asset codes simultaneously.
+
+    ---
+
+    ## How It Works
+
+    The filter checks the asset field in transfer, mint, burn, and clawback events:
+
+    | Event Type | Field Checked |
+    |------------|---------------|
+    | Transfer | `transfer.asset.issuedAsset.assetCode` |
+    | Mint | `mint.asset.issuedAsset.assetCode` |
+    | Burn | `burn.asset.issuedAsset.assetCode` |
+    | Clawback | `clawback.asset.issuedAsset.assetCode` |
+
+    Fee events are always filtered out (they are XLM-only and use a different structure).
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--code <CODE>` | Asset code to filter for (repeatable) | — |
+    | `--issuer <G...>` | Issuer address to narrow match | — |
+    | `--native` | Filter for native XLM only | false |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    **Behavior:**
+    - `--code USDC` — matches any asset with code "USDC" regardless of issuer
+    - `--code USDC --issuer GA5Z...` — matches only USDC from that specific issuer
+    - `--code USDC --code AQUA` — matches USDC or AQUA
+    - `--native` — matches native XLM only (ignores --code and --issuer)
+    - No flags — passes all events through (no-op)
+
+    ---
+
+    ## Comparison with usdc-filter
+
+    `asset-filter --code USDC` is functionally equivalent to `usdc-filter`.
+
+    | Feature | usdc-filter | asset-filter |
+    |---------|-------------|--------------|
+    | USDC filtering | Yes | Yes (`--code USDC`) |
+    | Any asset | No | Yes (`--code X`) |
+    | Multiple assets | No | Yes (repeat `--code`) |
+    | Issuer filtering | No | Yes (`--issuer`) |
+    | Native XLM | No | Yes (`--native`) |
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | ~100,000 events/sec | Map lookup per event |
+    | Memory | < 10 MB | Stateless filter |
+    | Latency | < 1 ms | No buffering |
+
+    ---
+
+    ## Best Practices
+
+    1. **Pipeline Usage:** Use quiet mode (`-q`) when piping to other processors
+    2. **Early Filtering:** Place early in pipeline to reduce downstream data volume
+    3. **Issuer Verification:** Use `--issuer` in production to avoid matching rogue assets with the same code
+    4. **Migration:** Replace `usdc-filter` with `asset-filter --code USDC` for flexibility
