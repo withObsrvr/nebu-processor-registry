@@ -1,0 +1,63 @@
+// Protocol buffer definition for liquidity pool events processor.
+//
+// This schema defines the output format for liquidity pool operations
+// extracted from Stellar ledgers.
+
+syntax = "proto3";
+
+package liquidity_pool_events;
+
+option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/liquidity-pool-events";
+
+// LiquidityPoolEvent represents a liquidity pool operation.
+message LiquidityPoolEvent {
+  // Operation type: "deposit", "withdraw", or "trade"
+  string type = 1;
+
+  // Pool ID (hex-encoded)
+  string pool_id = 2;
+
+  // Account performing the operation
+  string account = 3;
+
+  // Assets involved in the operation
+  repeated PoolAsset assets = 4;
+
+  // Shares minted (deposit) or burned (withdraw)
+  string shares = 5;
+
+  // Pool reserves before the operation
+  repeated ReserveAmount reserves_before = 6;
+
+  // Pool reserves after the operation
+  repeated ReserveAmount reserves_after = 7;
+
+  // Event metadata
+  EventMeta meta = 10;
+}
+
+// PoolAsset represents an asset and amount in a pool operation.
+message PoolAsset {
+  string asset_type = 1;
+  string asset_code = 2;
+  string asset_issuer = 3;
+  string amount = 4;
+}
+
+// ReserveAmount represents a pool reserve.
+message ReserveAmount {
+  string asset_type = 1;
+  string asset_code = 2;
+  string asset_issuer = 3;
+  string amount = 4;
+}
+
+// EventMeta contains chronological context for the event.
+message EventMeta {
+  uint32 ledger_sequence = 1;
+  int64 closed_at_unix = 2;
+  string tx_hash = 3;
+  uint32 transaction_index = 4;
+  uint32 operation_index = 5;
+  bool in_successful_tx = 6;
+}

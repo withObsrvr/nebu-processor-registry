@@ -1,0 +1,134 @@
+processor:
+  name: account-effects
+  type: origin
+  description: Extract account-level effects (trustlines, signers, offers, data) from Stellar ledgers
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+proto:
+  source: github.com/withObsrvr/nebu-processor-registry/processors/account-effects
+  package: account_effects
+
+schema:
+  version: v1
+  identifier: nebu.account_effects.v1
+  documentation: https://github.com/withObsrvr/nebu-processor-registry/blob/main/processors/account-effects/description.yml
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install account-effects
+
+    # Extract account effects from a ledger range
+    account-effects --start-ledger 60200000 --end-ledger 60200100
+
+  examples: |
+    # Extract all account effects
+    account-effects --start-ledger 60200000 --end-ledger 60200100 | jq
+
+    # Filter for trustline changes
+    account-effects --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.type | startswith("trustline"))'
+
+    # Track signer changes for compliance
+    account-effects --start-ledger 60200000 --follow | \
+      jq 'select(.type | startswith("signer"))' | \
+      postgres-sink --dsn "$DSN" --table signer_changes
+
+    # Track account for specific address
+    account-effects --start-ledger 60200000 --follow | \
+      account-filter --account GABC...XYZ | \
+      nats-sink --subject "account.effects" --jetstream
+
+    # Offer lifecycle tracking
+    account-effects --start-ledger 60200000 --follow | \
+      jq 'select(.type | startswith("offer"))' | \
+      postgres-sink --dsn "$DSN" --table offer_events
+
+  extended_description: |
+    # Account Effects Origin Processor
+
+    Extracts account-level mutation events from Stellar ledgers. Covers the
+    operations that token-transfer intentionally skips: trustline changes,
+    signer updates, data entry modifications, offer lifecycle, and account
+    flag/threshold changes.
+
+    ---
+
+    ## Effect Types
+
+    | Type | Description |
+    |------|-------------|
+    | `account_created` | New account funded |
+    | `trustline_created` | New trustline established |
+    | `trustline_updated` | Trustline limit changed |
+    | `trustline_removed` | Trustline removed (limit set to 0) |
+    | `signer_updated` | Signer weight changed |
+    | `signer_removed` | Signer removed (weight set to 0) |
+    | `offer_created` | New DEX offer |
+    | `offer_updated` | DEX offer modified |
+    | `offer_removed` | DEX offer deleted |
+    | `data_updated` | Account data entry set |
+    | `data_removed` | Account data entry deleted |
+    | `flags_updated` | Account flags changed |
+    | `thresholds_updated` | Account thresholds changed |
+    | `home_domain_updated` | Home domain changed |
+    | `inflation_destination_updated` | Inflation destination changed |
+
+    ---
+
+    ## Example Event
+
+    ```json
+    {
+      "type": "trustline_created",
+      "account": "GABC...XYZ",
+      "details": "{\"assetCode\":\"USDC\",\"assetIssuer\":\"GA5Z...\",\"limit\":\"922337203685477580\"}",
+      "meta": {
+        "ledgerSequence": 60200001,
+        "closedAtUnix": 1733840400,
+        "txHash": "abc123...",
+        "transactionIndex": 5,
+        "operationIndex": 0,
+        "inSuccessfulTx": true
+      }
+    }
+    ```
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--start-ledger` | Starting ledger (required) | — |
+    | `--end-ledger` | Ending ledger | Latest (streaming) |
+    | `--rpc-url` | Stellar RPC endpoint | Public RPC |
+    | `--network` | Network passphrase | Mainnet |
+    | `-q, --quiet` | Suppress banner | false |
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | 100-200 ledgers/sec | Depends on operation density |
+    | Memory | 50-100 MB | Constant |
+
+    ---
+
+    ## Use Cases
+
+    - **Compliance monitoring** — Track signer changes, flag updates
+    - **Account auditing** — Full lifecycle of account configuration
+    - **DEX analytics** — Offer creation/modification/deletion
+    - **Trust graph** — Track trustline establishment across the network
+    - **Data entry tracking** — Monitor on-chain key-value data

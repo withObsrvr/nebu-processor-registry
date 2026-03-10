@@ -1,0 +1,143 @@
+processor:
+  name: kafka-sink
+  type: sink
+  description: Publish JSON events to Kafka topics with partitioning and compression
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install kafka-sink
+
+    # Publish to Kafka
+    token-transfer --start-ledger 60200000 --follow | \
+      kafka-sink --brokers kafka:9092 --topic stellar-transfers
+
+  examples: |
+    # Basic usage
+    token-transfer --start-ledger 60200000 --follow | \
+      kafka-sink --brokers kafka:9092 --topic stellar-transfers
+
+    # With partition key (events for same asset go to same partition)
+    token-transfer --start-ledger 60200000 --follow | \
+      kafka-sink --brokers kafka:9092 --topic transfers \
+        --key transfer.asset.issuedAsset.assetCode
+
+    # USDC transfers to dedicated topic
+    token-transfer --start-ledger 60200000 --follow | \
+      usdc-filter | \
+      kafka-sink --brokers kafka:9092 --topic usdc-transfers
+
+    # With SASL authentication
+    token-transfer --start-ledger 60200000 --follow | \
+      kafka-sink --brokers kafka:9092 --topic transfers \
+        --sasl-user myuser --sasl-password mypass
+
+    # Using environment variables
+    KAFKA_BROKERS=kafka1:9092,kafka2:9092 KAFKA_SASL_USER=user KAFKA_SASL_PASSWORD=pass \
+      token-transfer --start-ledger 60200000 --follow | \
+      kafka-sink --topic stellar-transfers
+
+    # With gzip compression
+    token-transfer --start-ledger 60200000 --follow | \
+      kafka-sink --brokers kafka:9092 --topic transfers --compression gzip
+
+    # Contract events with tx hash as partition key
+    contract-events --start-ledger 60200000 --follow | \
+      kafka-sink --brokers kafka:9092 --topic contract-events \
+        --key transactionHash
+
+  extended_description: |
+    # Kafka Sink Processor
+
+    Publishes nebu events to Apache Kafka topics. Complements the NATS sink
+    for organizations using Kafka as their event backbone. Supports partition
+    key extraction, compression, SASL authentication, and configurable acks.
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--brokers <hosts>` | Kafka broker addresses (comma-separated) | localhost:9092 |
+    | `--topic <name>` | Kafka topic (required) | — |
+    | `--key <path>` | Field path for partition key (dot notation) | — |
+    | `--compression <alg>` | none, gzip, snappy, lz4 | snappy |
+    | `--batch-size <N>` | Producer batch size | 100 |
+    | `--acks <level>` | Required acks: 0, 1, or all | all |
+    | `--sasl-user <user>` | SASL username | — |
+    | `--sasl-password <pass>` | SASL password | — |
+    | `-q, --quiet` | Suppress banner | false |
+
+    **Environment Variables:**
+
+    | Variable | Description |
+    |----------|-------------|
+    | `KAFKA_BROKERS` | Broker addresses |
+    | `KAFKA_SASL_USER` | SASL username |
+    | `KAFKA_SASL_PASSWORD` | SASL password |
+
+    ---
+
+    ## Partition Key
+
+    Use `--key` to extract a partition key from events. Events with the same
+    key are guaranteed to go to the same partition, preserving ordering:
+
+    - `--key meta.txHash` — Group by transaction
+    - `--key transfer.asset.issuedAsset.assetCode` — Group by asset
+    - `--key contractId` — Group by contract
+
+    Without `--key`, Kafka distributes events round-robin across partitions.
+
+    ---
+
+    ## Ack Levels
+
+    | Level | Meaning | Use Case |
+    |-------|---------|----------|
+    | `0` | Fire-and-forget | Highest throughput, may lose messages |
+    | `1` | Leader acknowledged | Good balance of speed and safety |
+    | `all` | All replicas acknowledged | Strongest durability guarantee |
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | 10,000-100,000 msgs/sec | Depends on acks and compression |
+    | Latency | 1-10 ms | Batched async writes |
+    | Compression | 3-8x | Snappy or LZ4 recommended |
+
+    ---
+
+    ## Comparison with NATS Sink
+
+    | Feature | kafka-sink | nats-sink |
+    |---------|-----------|-----------|
+    | Ordering | Per-partition | Per-subject |
+    | Persistence | Always | JetStream only |
+    | Compression | Built-in | None |
+    | Consumer groups | Native | JetStream |
+    | Dynamic routing | No (fixed topic) | Yes (subject templates) |
+    | Ecosystem | Enterprise/Java | Cloud-native/Go |
+
+    ---
+
+    ## Best Practices
+
+    1. Pre-create topics before running the sink
+    2. Use `--compression snappy` for best throughput/ratio balance
+    3. Use `--acks all` for critical data, `--acks 1` for high-volume streams
+    4. Use `--key` for ordering guarantees within a partition
+    5. Use environment variables for credentials in production
