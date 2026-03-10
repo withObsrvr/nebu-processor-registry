@@ -5,7 +5,7 @@ go 1.25.4
 require (
 	github.com/lib/pq v1.10.9
 	github.com/spf13/cobra v1.10.2
-	github.com/withObsrvr/nebu v0.0.0-20251220140929-61e9fa85d21a
+	github.com/withObsrvr/nebu v0.4.0
 )
 
 require (

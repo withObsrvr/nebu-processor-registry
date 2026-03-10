@@ -16,11 +16,12 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/spf13/cobra"
+	"github.com/withObsrvr/nebu/pkg/metrics"
 	"github.com/withObsrvr/nebu/pkg/processor/cli"
 	"github.com/withObsrvr/nebu/pkg/toid"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 var (
 	// Connection settings
@@ -31,7 +32,15 @@ var (
 	batchSize int
 
 	// Conflict resolution
-	conflictMode string // "ignore" or "update"
+	conflictMode string // "ignore", "update", or "update-if-newer"
+
+	// Retry settings
+	maxRetries   int
+	retryBackoff time.Duration
+
+	// Metrics
+	metricsPort int
+	recorder    *metrics.Recorder
 
 	// State
 	db          *sql.DB
@@ -42,9 +51,10 @@ var (
 )
 
 type batchEvent struct {
-	id        int64
-	eventType *string
-	data      []byte
+	id             int64
+	eventType      *string
+	ledgerSequence *int64
+	data           []byte
 }
 
 func main() {
@@ -109,7 +119,13 @@ func addFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&batchSize, "batch-size", 1000,
 		"Number of events to batch before COPY")
 	cmd.Flags().StringVar(&conflictMode, "conflict", "ignore",
-		"Conflict resolution: 'ignore' (DO NOTHING) or 'update' (DO UPDATE)")
+		"Conflict resolution: 'ignore', 'update', or 'update-if-newer'")
+	cmd.Flags().IntVar(&maxRetries, "max-retries", 5,
+		"Max retry attempts for batch flush (0 = no retry)")
+	cmd.Flags().DurationVar(&retryBackoff, "retry-backoff", 5*time.Second,
+		"Base backoff between retries")
+	cmd.Flags().IntVar(&metricsPort, "metrics-port", 0,
+		"Port to expose Prometheus metrics on (0 = disabled)")
 
 	cmd.MarkFlagRequired("dsn")
 }
@@ -125,6 +141,15 @@ func processEvent(event map[string]interface{}) error {
 			return err
 		}
 		startFlushTicker()
+		// Start metrics server if configured
+		if metricsPort > 0 {
+			recorder = metrics.NewRecorder("postgres_sink")
+			go func() {
+				if err := recorder.Serve(metricsPort); err != nil {
+					fmt.Fprintf(os.Stderr, "Metrics server error: %v\n", err)
+				}
+			}()
+		}
 	}
 
 	// Generate or extract TOID
@@ -166,6 +191,9 @@ func processEvent(event map[string]interface{}) error {
 	// Extract event type if present
 	eventType := extractEventType(event)
 
+	// Extract ledger sequence if present
+	ledgerSeq := extractLedgerSequence(event)
+
 	// Marshal event to JSON
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -174,16 +202,67 @@ func processEvent(event map[string]interface{}) error {
 
 	// Add to batch
 	batch = append(batch, batchEvent{
-		id:        id,
-		eventType: eventType,
-		data:      data,
+		id:             id,
+		eventType:      eventType,
+		ledgerSequence: ledgerSeq,
+		data:           data,
 	})
+
+	// Record metrics
+	if recorder != nil {
+		recorder.RecordEventsProcessed(1)
+		if ledgerSeq != nil {
+			recorder.SetCurrentLedger(*ledgerSeq)
+		}
+	}
 
 	// Flush if batch is full
 	if len(batch) >= batchSize {
 		return flushBatch()
 	}
 
+	return nil
+}
+
+// extractLedgerSequence extracts the ledger sequence number from an event.
+// Supports: meta.ledgerSequence (token-transfer), top-level ledgerSequence (contract-events),
+// meta.ledger_sequence, top-level ledger_sequence.
+func extractLedgerSequence(event map[string]interface{}) *int64 {
+	// Try meta.ledgerSequence (token-transfer format)
+	if meta, ok := event["meta"].(map[string]interface{}); ok {
+		if v := toInt64(meta["ledgerSequence"]); v != nil {
+			return v
+		}
+		if v := toInt64(meta["ledger_sequence"]); v != nil {
+			return v
+		}
+	}
+	// Try top-level ledgerSequence (contract-events format)
+	if v := toInt64(event["ledgerSequence"]); v != nil {
+		return v
+	}
+	// Try top-level ledger_sequence
+	if v := toInt64(event["ledger_sequence"]); v != nil {
+		return v
+	}
+	return nil
+}
+
+// toInt64 converts a JSON number value to *int64.
+func toInt64(val interface{}) *int64 {
+	if val == nil {
+		return nil
+	}
+	switch v := val.(type) {
+	case float64:
+		i := int64(v)
+		return &i
+	case int64:
+		return &v
+	case int:
+		i := int64(v)
+		return &i
+	}
 	return nil
 }
 
@@ -266,6 +345,7 @@ func ensureTable() error {
 		CREATE TABLE IF NOT EXISTS %s (
 			id BIGINT PRIMARY KEY,
 			event_type TEXT,
+			ledger_sequence BIGINT,
 			data JSONB NOT NULL,
 			created_at TIMESTAMPTZ DEFAULT NOW()
 		)
@@ -275,11 +355,18 @@ func ensureTable() error {
 		return fmt.Errorf("failed to create table: %w", err)
 	}
 
+	// Add ledger_sequence column to existing tables that don't have it
+	alterQuery := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS ledger_sequence BIGINT`, tableName)
+	if _, err := db.ExecContext(ctx, alterQuery); err != nil {
+		return fmt.Errorf("failed to add ledger_sequence column: %w", err)
+	}
+
 	// Create indexes
 	indexes := []string{
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_data ON %s USING GIN (data)", tableName, tableName),
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_event_type ON %s (event_type) WHERE event_type IS NOT NULL", tableName, tableName),
 		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_created_at ON %s (created_at)", tableName, tableName),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_ledger_sequence ON %s (ledger_sequence)", tableName, tableName),
 	}
 
 	for _, idx := range indexes {
@@ -291,39 +378,68 @@ func ensureTable() error {
 	return nil
 }
 
-// flushBatch writes the current batch to PostgreSQL using COPY
+// flushBatch writes the current batch to PostgreSQL, retrying with exponential backoff on failure.
 func flushBatch() error {
 	if len(batch) == 0 {
 		return nil
 	}
 
+	if maxRetries == 0 {
+		err := flushBatchOnce()
+		if err == nil && recorder != nil {
+			recorder.RecordBatchFlush()
+		}
+		return err
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		lastErr = flushBatchOnce()
+		if lastErr == nil {
+			if recorder != nil {
+				recorder.RecordBatchFlush()
+			}
+			return nil
+		}
+		if attempt < maxRetries {
+			if recorder != nil {
+				recorder.RecordRetry()
+			}
+			backoff := time.Duration(attempt+1) * retryBackoff
+			fmt.Fprintf(os.Stderr, "Batch flush failed (attempt %d/%d), retrying in %v: %v\n",
+				attempt+1, maxRetries, backoff, lastErr)
+			time.Sleep(backoff)
+		}
+	}
+	return fmt.Errorf("batch flush failed after %d attempts: %w", maxRetries, lastErr)
+}
+
+// flushBatchOnce performs a single attempt to write the batch to PostgreSQL.
+func flushBatchOnce() error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	// Prepare COPY statement
 	stmt, err := tx.PrepareContext(ctx, getUpsertQuery())
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %w", err)
 	}
 	defer stmt.Close()
 
-	// Insert each event in the batch
 	for _, evt := range batch {
-		_, err := stmt.ExecContext(ctx, evt.id, evt.eventType, evt.data)
+		_, err := stmt.ExecContext(ctx, evt.id, evt.eventType, evt.ledgerSequence, evt.data)
 		if err != nil {
 			return fmt.Errorf("failed to insert event: %w", err)
 		}
 	}
 
-	// Commit transaction
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	// Clear batch
+	// Clear batch only on success
 	batch = batch[:0]
 
 	return nil
@@ -332,8 +448,8 @@ func flushBatch() error {
 // getUpsertQuery returns the appropriate INSERT query based on conflict mode
 func getUpsertQuery() string {
 	base := fmt.Sprintf(`
-		INSERT INTO %s (id, event_type, data)
-		VALUES ($1, $2, $3)
+		INSERT INTO %s (id, event_type, ledger_sequence, data)
+		VALUES ($1, $2, $3, $4)
 	`, tableName)
 
 	switch conflictMode {
@@ -341,9 +457,20 @@ func getUpsertQuery() string {
 		return base + `
 			ON CONFLICT (id) DO UPDATE SET
 				event_type = EXCLUDED.event_type,
+				ledger_sequence = EXCLUDED.ledger_sequence,
 				data = EXCLUDED.data,
 				created_at = NOW()
 		`
+	case "update-if-newer":
+		return base + fmt.Sprintf(`
+			ON CONFLICT (id) DO UPDATE SET
+				event_type = EXCLUDED.event_type,
+				ledger_sequence = EXCLUDED.ledger_sequence,
+				data = EXCLUDED.data,
+				created_at = NOW()
+			WHERE EXCLUDED.ledger_sequence > %s.ledger_sequence
+				OR %s.ledger_sequence IS NULL
+		`, tableName, tableName)
 	case "ignore":
 		fallthrough
 	default:
