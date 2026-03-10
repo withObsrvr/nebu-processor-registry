@@ -3,30 +3,42 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/rand"
 	"os"
 	"os/signal"
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/spf13/cobra"
+	"github.com/withObsrvr/nebu/pkg/metrics"
 	"github.com/withObsrvr/nebu/pkg/processor/cli"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 var (
 	// Connection settings
-	natsURL      string
-	credsFile    string
-	connName     string
-	connTimeout  int
+	natsURL     string
+	credsFile   string
+	connName    string
+	connTimeout int
 
 	// Publishing settings
-	subjectTmpl string
+	subjectTmpl  string
 	useJetStream bool
-	strict      bool
+	strict       bool
+
+	// Retry settings
+	maxRetries   int
+	retryBackoff time.Duration
+
+	// Metrics
+	metricsPort int
+	recorder    *metrics.Recorder
 
 	// Connection state (lazy initialized)
 	nc *nats.Conn
@@ -62,6 +74,9 @@ func setupCleanup() {
 
 // cleanup ensures NATS connection is properly closed
 func cleanup() {
+	if recorder != nil {
+		recorder.Shutdown()
+	}
 	if nc != nil {
 		// Flush any pending messages before closing
 		nc.Flush()
@@ -88,6 +103,16 @@ func addFlags(cmd *cobra.Command) {
 		"Use JetStream for reliable delivery")
 	cmd.Flags().BoolVar(&strict, "strict", false,
 		"Fail on missing template variables (default: use '_unknown')")
+
+	// Retry flags
+	cmd.Flags().IntVar(&maxRetries, "max-retries", 5,
+		"Max retry attempts for publish (0 = no retry)")
+	cmd.Flags().DurationVar(&retryBackoff, "retry-backoff", 2*time.Second,
+		"Base backoff between retries")
+
+	// Metrics flags
+	cmd.Flags().IntVar(&metricsPort, "metrics-port", 0,
+		"Port to expose Prometheus metrics on (0 = disabled)")
 }
 
 // publishToNats processes each event and publishes to NATS
@@ -96,6 +121,15 @@ func publishToNats(event map[string]interface{}) error {
 	if nc == nil {
 		if err := connect(); err != nil {
 			return err
+		}
+		// Start metrics server if configured
+		if metricsPort > 0 {
+			recorder = metrics.NewRecorder("nats_sink")
+			go func() {
+				if err := recorder.Serve(metricsPort); err != nil {
+					fmt.Fprintf(os.Stderr, "Metrics server error: %v\n", err)
+				}
+			}()
 		}
 	}
 
@@ -108,25 +142,60 @@ func publishToNats(event map[string]interface{}) error {
 		return fmt.Errorf("failed to marshal event: %w", err)
 	}
 
-	// Publish to NATS
-	if useJetStream {
-		_, err = js.Publish(subject, data)
-	} else {
-		err = nc.Publish(subject, data)
+	// Publish with retry
+	if err := publishWithRetry(subject, data); err != nil {
+		return err
 	}
 
-	if err != nil {
-		return fmt.Errorf("failed to publish to %s: %w", subject, err)
+	if recorder != nil {
+		recorder.RecordEventsProcessed(1)
 	}
 
 	return nil
+}
+
+// publishWithRetry publishes a message with exponential backoff on failure.
+func publishWithRetry(subject string, data []byte) error {
+	publishOnce := func() error {
+		if useJetStream {
+			_, err := js.Publish(subject, data)
+			return err
+		}
+		return nc.Publish(subject, data)
+	}
+
+	if maxRetries == 0 {
+		if err := publishOnce(); err != nil {
+			return fmt.Errorf("failed to publish to %s: %w", subject, err)
+		}
+		return nil
+	}
+
+	totalAttempts := maxRetries + 1
+	var lastErr error
+	for attempt := 1; attempt <= totalAttempts; attempt++ {
+		lastErr = publishOnce()
+		if lastErr == nil {
+			return nil
+		}
+		if attempt < totalAttempts {
+			if recorder != nil {
+				recorder.RecordRetry()
+			}
+			backoff := exponentialBackoff(attempt, retryBackoff)
+			fmt.Fprintf(os.Stderr, "Publish to %s failed (attempt %d/%d), retrying in %v: %v\n",
+				subject, attempt, totalAttempts, backoff, lastErr)
+			time.Sleep(backoff)
+		}
+	}
+	return fmt.Errorf("publish to %s failed after %d attempts: %w", subject, totalAttempts, lastErr)
 }
 
 // connect establishes connection to NATS server
 func connect() error {
 	opts := []nats.Option{
 		nats.Name(connName),
-		nats.Timeout(nats.DefaultTimeout),
+		nats.Timeout(time.Duration(connTimeout) * time.Second),
 		// Production resilience: reconnect forever to handle network blips
 		nats.MaxReconnects(-1),
 		nats.ReconnectWait(2 * nats.DefaultTimeout),
@@ -227,6 +296,15 @@ func handleMissingValue(path string) string {
 		os.Exit(1)
 	}
 	return "_unknown"
+}
+
+// exponentialBackoff returns a duration with exponential growth and jitter.
+// Formula: base * 2^(attempt-1) + random jitter up to 25% of the backoff.
+func exponentialBackoff(attempt int, base time.Duration) time.Duration {
+	backoff := base * time.Duration(math.Pow(2, float64(attempt-1)))
+	// Add up to 25% jitter
+	jitter := time.Duration(rand.Int63n(int64(backoff) / 4))
+	return backoff + jitter
 }
 
 // getEnvOrDefault gets environment variable or returns default
