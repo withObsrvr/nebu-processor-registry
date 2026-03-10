@@ -1,0 +1,158 @@
+processor:
+  name: s3-sink
+  type: sink
+  description: Write JSONL events to S3-compatible object storage with time partitioning
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install s3-sink
+
+    # Write to S3
+    token-transfer --start-ledger 60200000 --follow | \
+      s3-sink --bucket my-data-lake --prefix stellar/transfers
+
+  examples: |
+    # Write transfers to S3 with hourly partitioning
+    token-transfer --start-ledger 60200000 --follow | \
+      s3-sink --bucket my-data-lake --prefix stellar/transfers
+
+    # Daily partitioning, uncompressed
+    token-transfer --start-ledger 60200000 --follow | \
+      s3-sink --bucket my-bucket --prefix transfers \
+        --partition daily --format jsonl
+
+    # Write to MinIO
+    token-transfer --start-ledger 60200000 --follow | \
+      s3-sink --bucket my-bucket --prefix transfers \
+        --endpoint http://minio:9000
+
+    # Write to Cloudflare R2
+    token-transfer --start-ledger 60200000 --follow | \
+      s3-sink --bucket my-bucket --prefix transfers \
+        --endpoint https://ACCOUNT.r2.cloudflarestorage.com
+
+    # USDC transfers to data lake
+    token-transfer --start-ledger 60200000 --follow | \
+      usdc-filter | \
+      s3-sink --bucket analytics --prefix usdc/transfers
+
+    # Custom flush settings for high volume
+    token-transfer --start-ledger 60200000 --follow | \
+      s3-sink --bucket my-bucket --prefix transfers \
+        --flush-interval 1m --flush-size 128000000
+
+    # Backfill to S3
+    token-transfer --start-ledger 60000000 --end-ledger 60200000 | \
+      s3-sink --bucket backfill --prefix stellar/transfers
+
+  extended_description: |
+    # S3 Sink Processor
+
+    Writes buffered JSONL files to S3-compatible object storage (AWS S3, MinIO,
+    Cloudflare R2, Google Cloud Storage via S3 API). Files are partitioned by
+    time for efficient querying with Athena, DuckDB, Spark, or BigQuery.
+
+    ---
+
+    ## Output Structure
+
+    ```
+    s3://bucket/prefix/
+    ├── year=2024/
+    │   └── month=12/
+    │       └── day=10/
+    │           ├── hour=14/
+    │           │   ├── events-a1b2c3d4.jsonl.gz
+    │           │   └── events-e5f6g7h8.jsonl.gz
+    │           └── hour=15/
+    │               └── events-i9j0k1l2.jsonl.gz
+    ```
+
+    Hive-style partitioning (`year=YYYY/month=MM/day=DD/hour=HH`) works
+    natively with AWS Athena, Apache Spark, and other query engines.
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--bucket <name>` | S3 bucket name (required) | — |
+    | `--prefix <path>` | Key prefix | — |
+    | `--endpoint <url>` | Custom S3 endpoint (MinIO/R2) | AWS default |
+    | `--region <region>` | AWS region | us-east-1 |
+    | `--partition <mode>` | `hourly` or `daily` | hourly |
+    | `--format <fmt>` | `jsonl` or `jsonl.gz` | jsonl.gz |
+    | `--flush-interval <dur>` | Flush interval | 5m |
+    | `--flush-size <bytes>` | Max buffer size before flush | 64MB |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    **Environment Variables:**
+
+    | Variable | Description |
+    |----------|-------------|
+    | `AWS_ACCESS_KEY_ID` | AWS access key |
+    | `AWS_SECRET_ACCESS_KEY` | AWS secret key |
+    | `AWS_REGION` | AWS region |
+    | `S3_ENDPOINT` | Custom S3 endpoint |
+    | `S3_BUCKET` | S3 bucket name |
+
+    ---
+
+    ## Flush Behavior
+
+    Files are written to S3 when either condition is met:
+    - Buffer exceeds `--flush-size` (default: 64MB)
+    - `--flush-interval` elapses (default: 5 minutes)
+    - Process receives SIGINT/SIGTERM (graceful shutdown)
+
+    ---
+
+    ## Querying Data
+
+    **AWS Athena:**
+    ```sql
+    CREATE EXTERNAL TABLE transfers (
+      transfer struct<from:string, to:string, amount:string>,
+      meta struct<ledgerSequence:int, txHash:string, timestamp:string>
+    )
+    PARTITIONED BY (year string, month string, day string, hour string)
+    ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
+    LOCATION 's3://my-data-lake/stellar/transfers/';
+    ```
+
+    **DuckDB:**
+    ```sql
+    SELECT * FROM read_json('s3://my-data-lake/stellar/transfers/**/*.jsonl.gz');
+    ```
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | 10,000-50,000 events/sec | Buffered writes |
+    | Memory | ~flush-size + overhead | 64MB default buffer |
+    | Compression | 5-10x | Typical JSONL gzip ratio |
+
+    ---
+
+    ## Best Practices
+
+    1. Use `jsonl.gz` format for 5-10x storage savings
+    2. Use `hourly` partitioning for high-volume streams
+    3. Use `daily` partitioning for low-volume streams
+    4. Set `--flush-interval` shorter (1m) for near-real-time data availability
+    5. Use IAM roles instead of access keys when running on AWS
+    6. For MinIO/R2, always specify `--endpoint`

@@ -1,0 +1,94 @@
+processor:
+  name: rate-limiter
+  type: transform
+  description: Limit event throughput to a target rate using token bucket
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install rate-limiter
+
+    # Limit to 100 events/sec
+    token-transfer --start-ledger 60200000 --follow | \
+      rate-limiter --rate 100
+
+  examples: |
+    # Limit to 100 events/sec before webhook
+    token-transfer --start-ledger 60200000 --follow | \
+      rate-limiter --rate 100 | \
+      webhook-sink --url https://example.com/hook
+
+    # Limit to 10 events/sec with burst of 50
+    token-transfer --start-ledger 60200000 --follow | \
+      usdc-filter | \
+      rate-limiter --rate 10 --burst 50 | \
+      webhook-sink --url https://api.example.com/events
+
+    # Gentle rate for third-party API
+    contract-events --start-ledger 60200000 --follow | \
+      rate-limiter --rate 5 | \
+      webhook-sink --url https://api.thirdparty.com/events
+
+  extended_description: |
+    # Rate Limiter Transform Processor
+
+    Limits event throughput to a target rate using a token bucket algorithm.
+    Events are passed through at a controlled pace, preventing downstream
+    sinks from being overwhelmed.
+
+    ---
+
+    ## How It Works
+
+    Uses a **token bucket** algorithm:
+    - Tokens are added at `--rate` per second
+    - Each event consumes one token
+    - When no tokens available, the processor sleeps until one is available
+    - `--burst` controls the maximum token reserve for handling spikes
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--rate <N>` | Target events per second | 100 |
+    | `--burst <N>` | Max burst size | Same as rate |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Max throughput | Configured rate | By design |
+    | Memory | < 10 MB | Stateless (single counter) |
+    | Overhead | < 0.01 ms | Token check per event |
+
+    ---
+
+    ## Use Cases
+
+    - **Webhook protection** — Prevent overwhelming rate-limited HTTP endpoints
+    - **API compliance** — Stay within third-party API rate limits
+    - **Backpressure** — Control flow in high-volume pipelines
+    - **Testing** — Slow down event streams for debugging
+
+    ---
+
+    ## Best Practices
+
+    1. Place immediately before the rate-limited sink
+    2. Set `--burst` higher than `--rate` to handle natural traffic spikes
+    3. Use with `webhook-sink` for APIs with rate limits
+    4. No events are dropped — they are delayed, not discarded
