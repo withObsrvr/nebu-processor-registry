@@ -1,0 +1,220 @@
+processor:
+  name: contract-state
+  type: origin
+  description: Extract contract data state changes from Stellar ledgers
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+proto:
+  source: github.com/withObsrvr/nebu-processor-registry/processors/contract-state
+  package: contract_state
+
+schema:
+  version: v1
+  identifier: nebu.contract_state.v1
+  documentation: https://github.com/withObsrvr/nebu-processor-registry/blob/main/processors/contract-state/description.yml
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install contract-state
+
+    # Basic usage - process a ledger range
+    contract-state --start-ledger 60200000 --end-ledger 60200100
+
+    # Pipe from nebu fetch
+    nebu fetch 60200000 60200100 | contract-state
+
+    # Quiet mode (no startup banner)
+    contract-state -q --start-ledger 60200000 --end-ledger 60200100
+
+  examples: |
+    # Extract contract state changes from a ledger range
+    contract-state --start-ledger 60200000 --end-ledger 60200100 | jq
+
+    # Filter for a specific contract
+    contract-state --start-ledger 60200000 --end-ledger 60200100 | \
+      contract-filter --contract CABC...XYZ | jq
+
+    # Store to PostgreSQL
+    contract-state --start-ledger 60200000 --follow | \
+      postgres-sink --dsn "$DSN" --table contract_state
+
+    # Track a specific contract's state to NATS
+    contract-state --start-ledger 60200000 --follow | \
+      contract-filter --contract CABC...XYZ | \
+      nats-sink --subject "contract.state" --jetstream
+
+    # Use with custom RPC endpoint
+    contract-state --rpc-url https://rpc-pubnet.nodeswithobsrvr.co \
+      --start-ledger 60200000 --end-ledger 60200100
+
+  extended_description: |
+    # Contract State Origin Processor
+
+    This processor extracts contract data state changes from Stellar ledgers and
+    emits structured events in a standardized format. It captures all mutations to
+    contract storage entries (creates, updates, and deletes) with full key/value
+    data encoded as base64 XDR.
+
+    ---
+
+    ## Event Fields
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `contractId` | string | Contract address (C... strkey) |
+    | `ledgerKeyHash` | string | SHA-256 hash of the key XDR (hex) |
+    | `durability` | enum | `PERSISTENT` or `TEMPORARY` |
+    | `operation` | string | `create`, `update`, or `delete` |
+    | `keyXdr` | string | Key encoded as base64 XDR |
+    | `valXdr` | string | Value encoded as base64 XDR (empty for deletes) |
+    | `keySymbol` | string | Key symbol string (if key is a simple symbol, otherwise empty) |
+
+    ## Event Metadata Fields
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `ledgerSequence` | uint32 | Ledger number for ordering |
+    | `closedAtUnix` | int64 | Ledger close time (Unix seconds) |
+    | `txHash` | string | Transaction identifier (hex-encoded) |
+    | `transactionIndex` | uint32 | Position of transaction within ledger |
+
+    ---
+
+    ## Example Event Payload
+
+    ```json
+    {
+      "contractId": "CAJJZSGMMM3PD7N33TAPHGBUGTB43OC73HVIK2L2G6BNGGGYOSSYBXBD",
+      "ledgerKeyHash": "ad520948ba9b01c4e202b5f784de5ed57bd56d18a5de485a54db4b752c0cf61d",
+      "durability": "PERSISTENT",
+      "operation": "update",
+      "keyXdr": "AAAAB0JhbGFuY2U=",
+      "valXdr": "AAAAEAAAABAAAAABAAAADwAAAAdCYWxhbmNl...",
+      "keySymbol": "Balance",
+      "meta": {
+        "ledgerSequence": 60200001,
+        "closedAtUnix": 1733840400,
+        "txHash": "abc123def456789012345678901234567890123456789012345678901234",
+        "transactionIndex": 5
+      }
+    }
+    ```
+
+    ---
+
+    ## Deduplication
+
+    Multiple changes to the same contract data entry can occur within a single
+    ledger. This processor deduplicates by `contractId + ledgerKeyHash`, keeping
+    only the last change per entry per ledger. This matches the behavior of the
+    stellar-ledger-data-indexer.
+
+    ---
+
+    ## Durability Types
+
+    | Durability | Description | Typical Use |
+    |------------|-------------|-------------|
+    | `PERSISTENT` | Survives until TTL expires, higher rent cost | Token balances, admin config |
+    | `TEMPORARY` | Cheaper rent, shorter TTL | Price oracles, ephemeral caches |
+
+    ---
+
+    ## Operational Modes
+
+    **Bounded Mode (Backfill):**
+    ```bash
+    contract-state --start-ledger 60200000 --end-ledger 60200100
+    ```
+
+    **Unbounded Mode (Streaming):**
+    ```bash
+    contract-state --start-ledger 60200000
+    ```
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--start-ledger` | Starting ledger sequence (required) | — |
+    | `--end-ledger` | Ending ledger sequence | Latest (streaming) |
+    | `--rpc-url` | Stellar RPC endpoint URL | Public RPC |
+    | `--network` | Network passphrase | Mainnet |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    **Environment Variables:**
+
+    | Variable | Description |
+    |----------|-------------|
+    | `NEBU_RPC_URL` | RPC endpoint URL |
+    | `NEBU_NETWORK` | Network passphrase |
+    | `NEBU_RPC_AUTH` | Authorization header |
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | 50-150 ledgers/sec | Depends on contract density |
+    | Memory | 50-100 MB | Constant for streaming |
+    | Latency | ~1 second | From ledger close to event emit |
+
+    ---
+
+    ## Relationship to stellar-ledger-data-indexer
+
+    This processor provides the same contract data extraction as the
+    `contract_data.go` transform in the stellar-ledger-data-indexer, but in
+    composable Unix-pipe format. Instead of writing directly to PostgreSQL,
+    events are streamed to stdout for flexible downstream processing.
+
+    ---
+
+    ## Proto Schema
+
+    ```protobuf
+    message ContractStateEvent {
+      string contract_id = 1;
+      string ledger_key_hash = 2;
+      Durability durability = 3;
+      string operation = 4;
+      string key_xdr = 5;
+      string val_xdr = 6;
+      string key_symbol = 7;
+      EventMeta meta = 10;
+    }
+
+    enum Durability {
+      PERSISTENT = 0;
+      TEMPORARY = 1;
+    }
+
+    message EventMeta {
+      uint32 ledger_sequence = 1;
+      int64 closed_at_unix = 2;
+      string tx_hash = 3;
+      uint32 transaction_index = 4;
+    }
+    ```
+
+    ---
+
+    ## Best Practices
+
+    1. **Pipeline Usage:** Use quiet mode (`-q`) when piping to other processors
+    2. **Filtering:** Use with `contract-filter` to track specific contracts
+    3. **Production:** Use postgres-sink with `--conflict ignore` for replayable pipelines
+    4. **Backfill:** Use bounded mode with explicit end-ledger for historical data
+    5. **Companion:** Pair with `ttl-tracker` for full contract storage lifecycle visibility

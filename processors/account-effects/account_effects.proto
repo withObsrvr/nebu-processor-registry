@@ -1,0 +1,35 @@
+// Protocol buffer definition for account effects processor.
+//
+// This schema defines the output format for account-level effects
+// extracted from Stellar ledgers (non-payment operations).
+
+syntax = "proto3";
+
+package account_effects;
+
+option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/account-effects";
+
+// AccountEffect represents an account-level mutation event.
+message AccountEffect {
+  // Effect type (e.g., "trustline_created", "signer_updated", "offer_created")
+  string type = 1;
+
+  // Account affected
+  string account = 2;
+
+  // Effect-specific details as JSON string
+  string details = 3;
+
+  // Event metadata
+  EventMeta meta = 10;
+}
+
+// EventMeta contains chronological context for the event.
+message EventMeta {
+  uint32 ledger_sequence = 1;
+  int64 closed_at_unix = 2;
+  string tx_hash = 3;
+  uint32 transaction_index = 4;
+  uint32 operation_index = 5;
+  bool in_successful_tx = 6;
+}

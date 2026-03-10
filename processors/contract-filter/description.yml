@@ -1,0 +1,187 @@
+processor:
+  name: contract-filter
+  type: transform
+  description: Filter events by one or more contract IDs
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install contract-filter
+
+    # Use in pipeline
+    contract-events --start-ledger 60200000 --end-ledger 60200100 | \
+      contract-filter --contract CABC...XYZ
+
+  examples: |
+    # Filter contract events for a specific contract
+    contract-events --start-ledger 60200000 --end-ledger 60200100 | \
+      contract-filter --contract CABC...XYZ | \
+      json-file-sink --out my-contract-events.jsonl
+
+    # Filter invocations for multiple contracts
+    contract-invocation --start-ledger 60200000 --end-ledger 60200100 | \
+      contract-filter --contract CABC...XYZ --contract CDEF...123 | \
+      postgres-sink --dsn "$DSN" --table my_invocations
+
+    # Filter using a watchlist file
+    contract-events --start-ledger 60200000 --follow | \
+      contract-filter --contract-file defi-protocols.txt | \
+      nats-sink --subject "defi.events" --jetstream
+
+    # Filter token transfers by contract address (SAC events)
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      contract-filter --contract CABC...XYZ | \
+      json-file-sink --out sac-transfers.jsonl
+
+    # Combine with other filters
+    contract-events --start-ledger 60200000 --follow | \
+      contract-filter --contract CABC...XYZ | \
+      dedup --key meta.txHash | \
+      postgres-sink --dsn "$DSN" --table protocol_events
+
+  extended_description: |
+    # Contract Filter Transform Processor
+
+    A transform processor that filters any event stream by one or more Stellar
+    contract IDs. Works with all origin processors (contract-events,
+    contract-invocation, token-transfer, contract-state).
+
+    ---
+
+    ## How It Works
+
+    The filter checks multiple field locations in each event for contract IDs:
+
+    | Field Path | Event Type |
+    |------------|------------|
+    | `contractId` / `contract_id` | contract-events, contract-state |
+    | `meta.contractAddress` | token-transfer (SAC events) |
+    | `transfer.from`, `transfer.to` | token-transfer (contract addresses) |
+    | `stateChanges[].contractId` | contract-invocation |
+
+    An event passes through if **any** of these fields match any of the
+    specified contract IDs.
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--contract <ID>` | Contract ID to filter for (repeatable) | — |
+    | `--contract-file <path>` | File with contract IDs (one per line) | — |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    **Contract file format:**
+    ```
+    # DeFi protocols to monitor
+    CABC123...XYZ
+    CDEF456...123
+
+    # Blank lines and comments are ignored
+    CGHI789...456
+    ```
+
+    ---
+
+    ## Pipeline Position
+
+    ```
+    ┌──────────────────┐     ┌──────────────────┐     ┌──────────────┐
+    │ contract-events  │ ──▶ │ contract-filter  │ ──▶ │ postgres-    │
+    │ (origin)         │     │ (transform)      │     │ sink         │
+    └──────────────────┘     └──────────────────┘     └──────────────┘
+           ▲                         │
+           │                         │
+    All contract events     Only matching contracts
+    ```
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | ~100,000 events/sec | Hash map lookup per event |
+    | Memory | < 10 MB + ~64 bytes per contract ID | Stateless filter |
+    | Latency | < 1 ms | No buffering |
+
+    ---
+
+    ## Use Cases
+
+    - **Protocol monitoring** — Track events from a specific DEX, lending pool, or NFT marketplace
+    - **Multi-contract tracking** — Monitor a set of related contracts (e.g., all contracts in a protocol)
+    - **SAC event filtering** — Filter token transfers by Stellar Asset Contract address
+    - **Compliance** — Track interactions with specific contracts
+    - **Reduce data volume** — Filter before expensive downstream processing
+
+    ---
+
+    ## Common Pipelines
+
+    **1. Track a specific DEX:**
+    ```bash
+    contract-events --start-ledger 60200000 --follow | \
+      contract-filter --contract CDEX...ADDR | \
+      postgres-sink --dsn "$DSN" --table dex_events
+    ```
+
+    **2. Monitor multiple protocols:**
+    ```bash
+    contract-invocation --start-ledger 60200000 --follow | \
+      contract-filter --contract-file protocols.txt | \
+      nats-sink --subject "protocols.{contractId}" --jetstream
+    ```
+
+    **3. Contract state tracking:**
+    ```bash
+    contract-state --start-ledger 60200000 --follow | \
+      contract-filter --contract CABC...XYZ | \
+      postgres-sink --dsn "$DSN" --table my_contract_state
+    ```
+
+    ---
+
+    ## Comparison with jq Filtering
+
+    This processor is equivalent to:
+    ```bash
+    contract-events ... | jq -c 'select(
+      .contractId == "CABC...XYZ" or
+      .contract_id == "CABC...XYZ" or
+      .meta.contractAddress == "CABC...XYZ"
+    )'
+    ```
+
+    **Why use contract-filter instead of jq?**
+    - Supports multiple contract IDs efficiently (hash map vs OR chain)
+    - Checks all common field locations automatically
+    - Loads contract lists from files
+    - Faster (compiled Go vs interpreted jq)
+
+    ---
+
+    ## Limitations
+
+    - No regex matching on contract IDs
+    - No contract alias/name resolution
+    - Checks a fixed set of field paths (covers all standard nebu event schemas)
+
+    ---
+
+    ## Best Practices
+
+    1. **Pipeline Usage:** Use quiet mode (`-q`) when piping to other processors
+    2. **Early Filtering:** Place early in pipeline to reduce downstream data volume
+    3. **Contract Files:** Use `--contract-file` for large or frequently changing contract lists
+    4. **Combine Filters:** Chain with dedup and time-window for refined pipelines

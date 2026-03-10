@@ -1,0 +1,226 @@
+processor:
+  name: ttl-tracker
+  type: origin
+  description: Extract TTL (time-to-live) changes from Stellar ledgers
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+proto:
+  source: github.com/withObsrvr/nebu-processor-registry/processors/ttl-tracker
+  package: ttl_tracker
+
+schema:
+  version: v1
+  identifier: nebu.ttl_tracker.v1
+  documentation: https://github.com/withObsrvr/nebu-processor-registry/blob/main/processors/ttl-tracker/description.yml
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install ttl-tracker
+
+    # Basic usage - process a ledger range
+    ttl-tracker --start-ledger 60200000 --end-ledger 60200100
+
+    # Pipe from nebu fetch
+    nebu fetch 60200000 60200100 | ttl-tracker
+
+    # Quiet mode (no startup banner)
+    ttl-tracker -q --start-ledger 60200000 --end-ledger 60200100
+
+  examples: |
+    # Extract TTL changes from a ledger range
+    ttl-tracker --start-ledger 60200000 --end-ledger 60200100 | jq
+
+    # Store TTL data to PostgreSQL
+    ttl-tracker --start-ledger 60200000 --follow | \
+      postgres-sink --dsn "$DSN" --table ttl_entries
+
+    # Stream TTL changes to NATS
+    ttl-tracker --start-ledger 60200000 --follow | \
+      nats-sink --subject "stellar.ttl" --jetstream
+
+    # Find entries expiring soon (within 1000 ledgers from current)
+    ttl-tracker --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.expirationLedger < 60201000)'
+
+    # Combine with contract-state for full storage lifecycle
+    # Terminal 1: State changes
+    contract-state --start-ledger 60200000 --follow | \
+      postgres-sink --dsn "$DSN" --table contract_state
+
+    # Terminal 2: TTL tracking
+    ttl-tracker --start-ledger 60200000 --follow | \
+      postgres-sink --dsn "$DSN" --table ttl_entries
+
+  extended_description: |
+    # TTL Tracker Origin Processor
+
+    This processor extracts TTL (time-to-live) changes from Stellar ledgers and
+    emits structured events. TTL entries track when contract data storage entries
+    expire. This is essential for contract operators who need to extend TTLs
+    before their data is evicted from the ledger.
+
+    ---
+
+    ## Event Fields
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `keyHash` | string | Hash of the ledger key this TTL applies to (hex) |
+    | `expirationLedger` | uint32 | Ledger sequence at which the entry expires |
+    | `operation` | string | `create`, `update`, or `delete` |
+
+    ## Event Metadata Fields
+
+    | Field | Type | Description |
+    |-------|------|-------------|
+    | `ledgerSequence` | uint32 | Ledger number for ordering |
+    | `closedAtUnix` | int64 | Ledger close time (Unix seconds) |
+    | `txHash` | string | Transaction identifier (hex-encoded) |
+    | `transactionIndex` | uint32 | Position of transaction within ledger |
+
+    ---
+
+    ## Example Event Payload
+
+    ```json
+    {
+      "keyHash": "83c830c6d200adbceda8e72d8204017f781b57e1ec8acf03674388a902732779",
+      "expirationLedger": 61000000,
+      "operation": "update",
+      "meta": {
+        "ledgerSequence": 60200001,
+        "closedAtUnix": 1733840400,
+        "txHash": "def456abc789012345678901234567890123456789012345678901234567",
+        "transactionIndex": 3
+      }
+    }
+    ```
+
+    ---
+
+    ## Deduplication
+
+    Multiple TTL changes for the same key hash can occur within a single ledger.
+    This processor deduplicates by `keyHash`, keeping only the last change per
+    entry per ledger. This matches the behavior of the stellar-ledger-data-indexer.
+
+    ---
+
+    ## How TTLs Work on Stellar
+
+    Contract data entries on Stellar have a finite lifetime. Each entry has an
+    associated TTL that specifies the last ledger at which the data is guaranteed
+    to exist. After the TTL expires, the entry may be evicted from the ledger.
+
+    - **Persistent entries** have longer default TTLs and can be extended
+    - **Temporary entries** have shorter TTLs and are cheaper to store
+    - Contract operators must extend TTLs before expiration to keep data alive
+    - TTL extensions are done via `ExtendFootprintTTL` operations
+
+    ---
+
+    ## Correlating TTLs with Contract State
+
+    TTL entries are keyed by the hash of the ledger key, which matches the
+    `ledgerKeyHash` field from the `contract-state` processor. To correlate:
+
+    ```bash
+    # Join TTL data with contract state in PostgreSQL
+    SELECT cs.contract_id, cs.key_symbol, t.expiration_ledger
+    FROM contract_state cs
+    JOIN ttl_entries t ON cs.ledger_key_hash = t.key_hash
+    WHERE t.expiration_ledger < current_ledger + 1000;
+    ```
+
+    ---
+
+    ## Operational Modes
+
+    **Bounded Mode (Backfill):**
+    ```bash
+    ttl-tracker --start-ledger 60200000 --end-ledger 60200100
+    ```
+
+    **Unbounded Mode (Streaming):**
+    ```bash
+    ttl-tracker --start-ledger 60200000
+    ```
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--start-ledger` | Starting ledger sequence (required) | — |
+    | `--end-ledger` | Ending ledger sequence | Latest (streaming) |
+    | `--rpc-url` | Stellar RPC endpoint URL | Public RPC |
+    | `--network` | Network passphrase | Mainnet |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    **Environment Variables:**
+
+    | Variable | Description |
+    |----------|-------------|
+    | `NEBU_RPC_URL` | RPC endpoint URL |
+    | `NEBU_NETWORK` | Network passphrase |
+    | `NEBU_RPC_AUTH` | Authorization header |
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | 100-200 ledgers/sec | TTL entries are lightweight |
+    | Memory | 30-50 MB | Constant for streaming |
+    | Latency | ~1 second | From ledger close to event emit |
+
+    ---
+
+    ## Proto Schema
+
+    ```protobuf
+    message TtlEvent {
+      string key_hash = 1;
+      uint32 expiration_ledger = 2;
+      string operation = 3;
+      EventMeta meta = 10;
+    }
+
+    message EventMeta {
+      uint32 ledger_sequence = 1;
+      int64 closed_at_unix = 2;
+      string tx_hash = 3;
+      uint32 transaction_index = 4;
+    }
+    ```
+
+    ---
+
+    ## Use Cases
+
+    - **TTL monitoring** — Alert when contract entries approach expiration
+    - **Automated renewal** — Trigger TTL extension transactions before expiry
+    - **Storage analytics** — Track TTL distribution across contracts
+    - **Compliance** — Verify data persistence requirements are met
+    - **Cost planning** — Forecast storage rent costs from TTL patterns
+
+    ---
+
+    ## Best Practices
+
+    1. **Pipeline Usage:** Use quiet mode (`-q`) when piping to other processors
+    2. **Companion:** Pair with `contract-state` for full storage lifecycle visibility
+    3. **Alerting:** Pipe to `nats-sink` with JetStream for reliable TTL alerts
+    4. **Correlation:** Use `keyHash` to join with contract-state's `ledgerKeyHash`
+    5. **Expiration Monitoring:** Filter in downstream for entries expiring within N ledgers

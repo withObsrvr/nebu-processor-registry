@@ -1,0 +1,40 @@
+// Protocol buffer definition for TTL tracker processor.
+//
+// This schema defines the output format for TTL (time-to-live) changes
+// extracted from Stellar ledgers.
+
+syntax = "proto3";
+
+package ttl_tracker;
+
+option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/ttl-tracker";
+
+// TtlEvent represents a TTL change for a contract data entry.
+message TtlEvent {
+  // Hash of the ledger key this TTL applies to
+  string key_hash = 1;
+
+  // The ledger sequence at which this entry expires
+  uint32 expiration_ledger = 2;
+
+  // Operation type: "create", "update", or "delete"
+  string operation = 3;
+
+  // Event metadata
+  EventMeta meta = 10;
+}
+
+// EventMeta contains chronological context for the event
+message EventMeta {
+  // Ledger sequence number
+  uint32 ledger_sequence = 1;
+
+  // Ledger close timestamp (Unix seconds)
+  int64 closed_at_unix = 2;
+
+  // Transaction hash (hex-encoded)
+  string tx_hash = 3;
+
+  // Transaction index within the ledger
+  uint32 transaction_index = 4;
+}

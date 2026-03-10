@@ -1,0 +1,117 @@
+processor:
+  name: aggregator
+  type: transform
+  description: Aggregate events into time-bucketed summaries with count, sum, min, max
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install aggregator
+
+    # 5-minute transfer volume summaries
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      aggregator --window 5m --sum-field transfer.amount
+
+  examples: |
+    # 5-minute transfer volume summaries
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      aggregator --window 5m --sum-field transfer.amount | jq
+
+    # Hourly summaries grouped by asset code
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      aggregator --window 1h --sum-field transfer.amount \
+        --group-by transfer.asset.issuedAsset.assetCode | jq
+
+    # USDC volume per minute
+    token-transfer --start-ledger 60200000 --follow | \
+      usdc-filter | \
+      aggregator --window 1m --sum-field transfer.amount | \
+      nats-sink --subject "metrics.usdc.volume"
+
+    # Event count per 5 minutes (no sum field)
+    token-transfer --start-ledger 60200000 --follow | \
+      aggregator --window 5m | \
+      json-file-sink --out event-counts.jsonl
+
+    # Dashboard-ready metrics to PostgreSQL
+    token-transfer --start-ledger 60200000 --follow | \
+      aggregator --window 1h --sum-field transfer.amount \
+        --group-by transfer.asset.issuedAsset.assetCode | \
+      postgres-sink --dsn "$DSN" --table transfer_metrics
+
+  extended_description: |
+    # Aggregator Transform Processor
+
+    A stateful transform that buckets events by time window and emits summary
+    events with count, sum, min, and max statistics. Uses ledger timestamps
+    (not wall clock) for deterministic replay.
+
+    ---
+
+    ## Output Event
+
+    ```json
+    {
+      "_schema": "nebu.aggregator.v1",
+      "window": {
+        "start": "2024-12-10T14:00:00Z",
+        "end": "2024-12-10T14:05:00Z",
+        "duration": "5m0s"
+      },
+      "stats": {
+        "count": 1247,
+        "sum": "89234000000",
+        "min": "100",
+        "max": "50000000000"
+      },
+      "groupKey": "USDC"
+    }
+    ```
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--window <duration>` | Window duration (1m, 5m, 1h, etc.) | 5m |
+    | `--sum-field <path>` | Field to sum (dot notation) | — |
+    | `--group-by <path>` | Field to group by (dot notation) | — |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    ---
+
+    ## Window Behavior
+
+    - **Tumbling windows** — Non-overlapping, fixed-size time buckets
+    - **Ledger time** — Uses event timestamps, not wall clock
+    - **Deterministic** — Same input always produces same output
+    - **Emit on close** — Summary emitted when first event from next window arrives
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | ~50,000 events/sec | Hash map update per event |
+    | Memory | < 50 MB | Proportional to active windows * groups |
+    | Latency | One window duration | Summaries emitted after window closes |
+
+    ---
+
+    ## Best Practices
+
+    1. Use `--sum-field` for volume/amount aggregation
+    2. Use `--group-by` for per-asset or per-account breakdowns
+    3. Pair with `usdc-filter` or `asset-filter` to pre-filter before aggregation
+    4. Use shorter windows (1m) for real-time dashboards, longer (1h) for analytics

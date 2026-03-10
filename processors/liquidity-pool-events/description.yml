@@ -1,0 +1,132 @@
+processor:
+  name: liquidity-pool-events
+  type: origin
+  description: Extract liquidity pool operations (deposit, withdraw, trade) from Stellar ledgers
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+proto:
+  source: github.com/withObsrvr/nebu-processor-registry/processors/liquidity-pool-events
+  package: liquidity_pool_events
+
+schema:
+  version: v1
+  identifier: nebu.liquidity_pool.v1
+  documentation: https://github.com/withObsrvr/nebu-processor-registry/blob/main/processors/liquidity-pool-events/description.yml
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install liquidity-pool-events
+
+    # Extract LP events from a ledger range
+    liquidity-pool-events --start-ledger 60200000 --end-ledger 60200100
+
+  examples: |
+    # Extract LP events
+    liquidity-pool-events --start-ledger 60200000 --end-ledger 60200100 | jq
+
+    # Filter for deposits only
+    liquidity-pool-events --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.type == "deposit")'
+
+    # Store to PostgreSQL
+    liquidity-pool-events --start-ledger 60200000 --follow | \
+      postgres-sink --dsn "$DSN" --table lp_events
+
+    # Track a specific pool
+    liquidity-pool-events --start-ledger 60200000 --follow | \
+      jq 'select(.poolId == "abc123...")' | \
+      nats-sink --subject "lp.events" --jetstream
+
+    # LP trades to data lake
+    liquidity-pool-events --start-ledger 60200000 --follow | \
+      jq 'select(.type == "trade")' | \
+      s3-sink --bucket analytics --prefix stellar/lp-trades
+
+  extended_description: |
+    # Liquidity Pool Events Origin Processor
+
+    Extracts liquidity pool operations from Stellar ledgers with full pool
+    context: reserves before/after, shares minted/burned, and asset details.
+    Captures deposits, withdrawals, and trades (path payments routed through pools).
+
+    ---
+
+    ## Event Types
+
+    | Type | Description | Key Fields |
+    |------|-------------|------------|
+    | `deposit` | LP deposit | poolId, account, assets, shares, reserves |
+    | `withdraw` | LP withdrawal | poolId, account, assets, shares, reserves |
+    | `trade` | Path payment through pool | poolId, reservesBefore, reservesAfter |
+
+    ---
+
+    ## Example Event
+
+    ```json
+    {
+      "type": "deposit",
+      "poolId": "abc123...",
+      "account": "GABC...XYZ",
+      "assets": [
+        {"assetCode": "USDC", "assetIssuer": "GA5Z...", "amount": "10000000000"},
+        {"assetCode": "XLM", "assetType": "native", "amount": "50000000000"}
+      ],
+      "shares": "7071067811",
+      "reservesBefore": [
+        {"assetCode": "USDC", "amount": "100000000000"},
+        {"assetCode": "XLM", "amount": "500000000000"}
+      ],
+      "reservesAfter": [
+        {"assetCode": "USDC", "amount": "110000000000"},
+        {"assetCode": "XLM", "amount": "550000000000"}
+      ],
+      "meta": {
+        "ledgerSequence": 60200001,
+        "closedAtUnix": 1733840400,
+        "txHash": "abc123...",
+        "transactionIndex": 5,
+        "operationIndex": 0,
+        "inSuccessfulTx": true
+      }
+    }
+    ```
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--start-ledger` | Starting ledger (required) | — |
+    | `--end-ledger` | Ending ledger | Latest (streaming) |
+    | `--rpc-url` | Stellar RPC endpoint | Public RPC |
+    | `--network` | Network passphrase | Mainnet |
+    | `-q, --quiet` | Suppress banner | false |
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | 100-200 ledgers/sec | LP ops are sparse |
+    | Memory | 50-100 MB | Constant |
+
+    ---
+
+    ## Use Cases
+
+    - **DeFi analytics** — Track LP volume, TVL, and utilization
+    - **Impermanent loss tracking** — Monitor reserve ratio changes
+    - **Pool monitoring** — Alert on large deposits/withdrawals
+    - **AMM research** — Analyze trade routing through pools

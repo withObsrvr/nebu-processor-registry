@@ -1,0 +1,222 @@
+processor:
+  name: webhook-sink
+  type: sink
+  description: POST JSON events to an HTTP endpoint with retry and batching
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install webhook-sink
+
+    # Post events to a webhook
+    token-transfer --start-ledger 60200000 --follow | \
+      webhook-sink --url https://example.com/webhook
+
+  examples: |
+    # USDC transfers to a webhook
+    token-transfer --start-ledger 60200000 --follow | \
+      usdc-filter | \
+      webhook-sink --url https://example.com/usdc-hook
+
+    # With authentication
+    token-transfer --start-ledger 60200000 --follow | \
+      webhook-sink --url https://example.com/webhook \
+        --auth-header "Bearer eyJhbG..."
+
+    # With custom headers
+    token-transfer --start-ledger 60200000 --follow | \
+      webhook-sink --url https://example.com/webhook \
+        --header "X-Source:nebu" \
+        --header "X-Environment:production"
+
+    # Batched delivery (100 events per request)
+    token-transfer --start-ledger 60200000 --follow | \
+      webhook-sink --url https://example.com/batch-hook \
+        --batch-size 100 --flush-interval 10s
+
+    # Whale alerts to Slack
+    token-transfer --start-ledger 60200000 --follow | \
+      amount-filter --min 10000000000 | \
+      webhook-sink --url https://hooks.slack.com/services/T.../B.../xxx
+
+    # Rate-limited webhook (when available)
+    token-transfer --start-ledger 60200000 --follow | \
+      usdc-filter | \
+      rate-limiter --rate 10 | \
+      webhook-sink --url https://api.example.com/events
+
+    # Using environment variables
+    WEBHOOK_URL=https://example.com/hook WEBHOOK_AUTH="Bearer token" \
+      token-transfer --start-ledger 60200000 --follow | webhook-sink
+
+  extended_description: |
+    # Webhook Sink Processor
+
+    Posts JSON events to any HTTP endpoint. This is the most versatile sink —
+    it connects nebu pipelines to Slack, Discord, PagerDuty, custom apps, and
+    any service with a webhook receiver.
+
+    ---
+
+    ## How It Works
+
+    1. Reads JSON events from stdin
+    2. Optionally batches events (default: send individually)
+    3. POSTs JSON to the configured URL
+    4. Retries on failure with exponential backoff
+    5. Flushes partial batches on shutdown
+
+    ---
+
+    ## Request Format
+
+    **Single event mode** (`--batch-size 1`, default):
+    ```http
+    POST /webhook HTTP/1.1
+    Content-Type: application/json
+    Authorization: Bearer token123
+
+    {"transfer": {"from": "G...", "to": "G...", ...}, "meta": {...}}
+    ```
+
+    **Batch mode** (`--batch-size N`):
+    ```http
+    POST /webhook HTTP/1.1
+    Content-Type: application/json
+
+    [
+      {"transfer": {...}, "meta": {...}},
+      {"transfer": {...}, "meta": {...}},
+      ...
+    ]
+    ```
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--url <URL>` | Webhook URL (required) | — |
+    | `--method <POST\|PUT>` | HTTP method | `POST` |
+    | `--header <key:value>` | Custom HTTP header (repeatable) | — |
+    | `--auth-header <value>` | Authorization header value | — |
+    | `--timeout <seconds>` | HTTP request timeout | `10` |
+    | `--batch-size <N>` | Events per request | `1` |
+    | `--flush-interval <dur>` | Flush partial batches interval | `5s` |
+    | `--max-retries <N>` | Max retry attempts | `3` |
+    | `--retry-backoff <dur>` | Base retry backoff | `2s` |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    **Environment Variables:**
+
+    | Variable | Description |
+    |----------|-------------|
+    | `WEBHOOK_URL` | Webhook URL |
+    | `WEBHOOK_AUTH` | Authorization header value |
+
+    ---
+
+    ## Retry Behavior
+
+    Failed requests are retried with exponential backoff and jitter:
+
+    | Attempt | Backoff |
+    |---------|---------|
+    | 1 | ~2s |
+    | 2 | ~4s |
+    | 3 | ~8s |
+
+    Retries are triggered on:
+    - Network errors (connection refused, timeout)
+    - HTTP 4xx/5xx responses
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput (single) | 50-200 events/sec | Limited by HTTP round-trip |
+    | Throughput (batched) | 1,000-10,000 events/sec | Depends on batch size |
+    | Memory | < 20 MB | Minimal buffering |
+
+    ---
+
+    ## Graceful Shutdown
+
+    On SIGINT/SIGTERM:
+    1. Stops accepting new events
+    2. Flushes any pending batch
+    3. Waits for in-flight requests to complete
+    4. Exits cleanly
+
+    ---
+
+    ## Use Cases
+
+    - **Slack/Discord alerts** — Whale movements, contract events
+    - **PagerDuty integration** — Critical event alerting
+    - **Custom APIs** — Feed events to your application backend
+    - **Serverless functions** — Trigger AWS Lambda, Cloud Functions
+    - **Third-party analytics** — Push to Mixpanel, Segment, etc.
+    - **Internal microservices** — Event-driven architecture
+
+    ---
+
+    ## Common Pipelines
+
+    **1. USDC whale alerts to Slack:**
+    ```bash
+    token-transfer --start-ledger 60200000 --follow | \
+      usdc-filter | \
+      amount-filter --min 100000000000 | \
+      webhook-sink --url https://hooks.slack.com/services/...
+    ```
+
+    **2. Contract events to custom API:**
+    ```bash
+    contract-events --start-ledger 60200000 --follow | \
+      contract-filter --contract CABC...XYZ | \
+      webhook-sink --url https://api.myapp.com/events \
+        --auth-header "Bearer $API_TOKEN" \
+        --batch-size 50
+    ```
+
+    **3. All transfers to analytics:**
+    ```bash
+    token-transfer --start-ledger 60200000 --follow | \
+      webhook-sink --url https://api.segment.io/v1/track \
+        --auth-header "Basic $SEGMENT_KEY" \
+        --batch-size 100
+    ```
+
+    ---
+
+    ## Limitations
+
+    - No webhook signature generation (receiver should validate by other means)
+    - No OAuth2 flow (use static tokens via --auth-header)
+    - No response body processing (fire-and-forget)
+    - No dead letter queue (failed events after retries are dropped with stderr log)
+    - JSON content type only
+
+    ---
+
+    ## Best Practices
+
+    1. **Rate Limiting:** Use `rate-limiter` upstream to avoid overwhelming endpoints
+    2. **Batching:** Use `--batch-size 50-100` for high-volume pipelines
+    3. **Authentication:** Use environment variables for tokens, not CLI flags
+    4. **Timeouts:** Increase `--timeout` for slow endpoints
+    5. **Monitoring:** Check stderr for retry/failure messages in production
+    6. **Pipeline Usage:** Use quiet mode (`-q`) when piping from other processors

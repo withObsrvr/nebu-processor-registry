@@ -1,0 +1,150 @@
+processor:
+  name: account-filter
+  type: transform
+  description: Filter events by Stellar account address
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install account-filter
+
+    # Filter for a specific account
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      account-filter --account GABC...XYZ
+
+  examples: |
+    # Track all activity for an account
+    token-transfer --start-ledger 60200000 --follow | \
+      account-filter --account GABC...XYZ | \
+      postgres-sink --dsn "$DSN" --table my_account_activity
+
+    # Filter for multiple accounts
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      account-filter --account GABC...XYZ --account GDEF...123
+
+    # Use a watchlist file
+    token-transfer --start-ledger 60200000 --follow | \
+      account-filter --account-file watchlist.txt | \
+      nats-sink --subject "alerts.watchlist" --jetstream
+
+    # Filter by role (source only)
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      account-filter --account GABC...XYZ --role source
+
+    # Combine with asset filter
+    token-transfer --start-ledger 60200000 --follow | \
+      account-filter --account GABC...XYZ | \
+      asset-filter --code USDC | \
+      json-file-sink --out my-usdc-activity.jsonl
+
+    # Track contract invocations by account
+    contract-invocation --start-ledger 60200000 --follow | \
+      account-filter --account GABC...XYZ | \
+      postgres-sink --dsn "$DSN" --table my_invocations
+
+  extended_description: |
+    # Account Filter Transform Processor
+
+    Filters any event stream by one or more Stellar account addresses. The most
+    common ad-hoc query pattern — "show me everything involving account X" — as
+    a composable pipeline component.
+
+    ---
+
+    ## How It Works
+
+    The filter checks multiple field locations for account addresses:
+
+    **Source fields** (checked when role is `any` or `source`):
+
+    | Field Path | Event Type |
+    |------------|------------|
+    | `transfer.from` | token-transfer |
+    | `burn.from` | token-transfer |
+    | `clawback.from` | token-transfer |
+    | `fee.from` | token-transfer |
+    | `fee.account` | token-transfer |
+    | `invokingAccount` | contract-invocation |
+    | `account` | account-effects |
+
+    **Destination fields** (checked when role is `any` or `destination`):
+
+    | Field Path | Event Type |
+    |------------|------------|
+    | `transfer.to` | token-transfer |
+    | `mint.to` | token-transfer |
+
+    **Meta fields** (always checked):
+
+    | Field Path | Event Type |
+    |------------|------------|
+    | `meta.contractAddress` | token-transfer (SAC events) |
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--account <G.../C...>` | Account address to filter for (repeatable) | — |
+    | `--account-file <path>` | File with account addresses (one per line) | — |
+    | `--role <any\|source\|destination>` | Filter role | `any` |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    **Account file format:**
+    ```
+    # Accounts to monitor
+    GABC123...XYZ
+    GDEF456...123
+
+    # Blank lines and comments are ignored
+    ```
+
+    ---
+
+    ## Role Filtering
+
+    | Role | Meaning | Use Case |
+    |------|---------|----------|
+    | `any` | Match if account appears anywhere | General activity tracking |
+    | `source` | Match only as sender/source | Outflow monitoring |
+    | `destination` | Match only as receiver | Inflow monitoring |
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Throughput | ~100,000 events/sec | Hash map lookup |
+    | Memory | < 10 MB + ~64 bytes per account | Stateless filter |
+    | Latency | < 1 ms | No buffering |
+
+    ---
+
+    ## Use Cases
+
+    - **Account monitoring** — Track all activity for specific accounts
+    - **Watchlist filtering** — Monitor a set of accounts for compliance
+    - **Outflow detection** — Track when specific accounts send assets
+    - **Inflow tracking** — Monitor deposits to specific accounts
+    - **Wallet analytics** — Build per-account activity feeds
+
+    ---
+
+    ## Best Practices
+
+    1. **Pipeline Usage:** Use quiet mode (`-q`) when piping to other processors
+    2. **Early Filtering:** Place early in pipeline to reduce downstream data volume
+    3. **Watchlists:** Use `--account-file` for large or frequently changing account lists
+    4. **Role Precision:** Use `--role source` or `--role destination` when direction matters
+    5. **Combine Filters:** Chain with asset-filter for "USDC activity for account X"
