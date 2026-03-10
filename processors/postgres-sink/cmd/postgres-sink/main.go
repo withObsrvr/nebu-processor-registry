@@ -9,11 +9,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/rand"
 	"os"
 	"os/signal"
+	"regexp"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 	"github.com/spf13/cobra"
 	"github.com/withObsrvr/nebu/pkg/metrics"
@@ -22,6 +27,9 @@ import (
 )
 
 const version = "0.2.0"
+
+// identifierRegexp validates SQL identifiers.
+var identifierRegexp = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 var (
 	// Connection settings
@@ -45,9 +53,13 @@ var (
 	// State
 	db          *sql.DB
 	batch       []batchEvent
+	batchMu     sync.Mutex
 	ctx         context.Context
 	cancel      context.CancelFunc
 	flushTicker *time.Ticker
+
+	// Quoted table name for SQL (set once during ensureTable)
+	quotedTable string
 )
 
 type batchEvent struct {
@@ -95,10 +107,17 @@ func cleanup() {
 	}
 
 	// Flush any pending events BEFORE canceling context
+	batchMu.Lock()
 	if db != nil && len(batch) > 0 {
-		if err := flushBatch(); err != nil {
+		if err := flushBatchLocked(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error flushing final batch: %v\n", err)
 		}
+	}
+	batchMu.Unlock()
+
+	// Shutdown metrics server
+	if recorder != nil {
+		recorder.Shutdown()
 	}
 
 	// Now cancel context to stop ticker goroutine
@@ -200,7 +219,8 @@ func processEvent(event map[string]interface{}) error {
 		return fmt.Errorf("failed to marshal event: %w", err)
 	}
 
-	// Add to batch
+	// Add to batch (synchronized)
+	batchMu.Lock()
 	batch = append(batch, batchEvent{
 		id:             id,
 		eventType:      eventType,
@@ -218,8 +238,11 @@ func processEvent(event map[string]interface{}) error {
 
 	// Flush if batch is full
 	if len(batch) >= batchSize {
-		return flushBatch()
+		err := flushBatchLocked()
+		batchMu.Unlock()
+		return err
 	}
+	batchMu.Unlock()
 
 	return nil
 }
@@ -339,8 +362,20 @@ func connect() error {
 	return nil
 }
 
+// safeIndexName derives a safe index name from a table name by stripping non-identifier characters.
+func safeIndexName(table, suffix string) string {
+	safe := regexp.MustCompile(`[^a-zA-Z0-9_]`).ReplaceAllString(table, "_")
+	return fmt.Sprintf("idx_%s_%s", safe, suffix)
+}
+
 // ensureTable creates the events table if it doesn't exist
 func ensureTable() error {
+	// Validate and quote table name
+	if !identifierRegexp.MatchString(tableName) {
+		return fmt.Errorf("invalid table name %q: must match [a-zA-Z_][a-zA-Z0-9_]*", tableName)
+	}
+	quotedTable = pq.QuoteIdentifier(tableName)
+
 	query := fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			id BIGINT PRIMARY KEY,
@@ -349,24 +384,24 @@ func ensureTable() error {
 			data JSONB NOT NULL,
 			created_at TIMESTAMPTZ DEFAULT NOW()
 		)
-	`, tableName)
+	`, quotedTable)
 
 	if _, err := db.ExecContext(ctx, query); err != nil {
 		return fmt.Errorf("failed to create table: %w", err)
 	}
 
 	// Add ledger_sequence column to existing tables that don't have it
-	alterQuery := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS ledger_sequence BIGINT`, tableName)
+	alterQuery := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN IF NOT EXISTS ledger_sequence BIGINT`, quotedTable)
 	if _, err := db.ExecContext(ctx, alterQuery); err != nil {
 		return fmt.Errorf("failed to add ledger_sequence column: %w", err)
 	}
 
-	// Create indexes
+	// Create indexes using safe index names
 	indexes := []string{
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_data ON %s USING GIN (data)", tableName, tableName),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_event_type ON %s (event_type) WHERE event_type IS NOT NULL", tableName, tableName),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_created_at ON %s (created_at)", tableName, tableName),
-		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_ledger_sequence ON %s (ledger_sequence)", tableName, tableName),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s USING GIN (data)", pq.QuoteIdentifier(safeIndexName(tableName, "data")), quotedTable),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (event_type) WHERE event_type IS NOT NULL", pq.QuoteIdentifier(safeIndexName(tableName, "event_type")), quotedTable),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (created_at)", pq.QuoteIdentifier(safeIndexName(tableName, "created_at")), quotedTable),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (ledger_sequence)", pq.QuoteIdentifier(safeIndexName(tableName, "ledger_sequence")), quotedTable),
 	}
 
 	for _, idx := range indexes {
@@ -378,22 +413,26 @@ func ensureTable() error {
 	return nil
 }
 
-// flushBatch writes the current batch to PostgreSQL, retrying with exponential backoff on failure.
+// flushBatch acquires the batch mutex and flushes with retry.
 func flushBatch() error {
+	batchMu.Lock()
+	defer batchMu.Unlock()
+	return flushBatchLocked()
+}
+
+// flushBatchLocked flushes the batch with retry. Caller must hold batchMu.
+func flushBatchLocked() error {
 	if len(batch) == 0 {
 		return nil
 	}
 
+	totalAttempts := maxRetries + 1
 	if maxRetries == 0 {
-		err := flushBatchOnce()
-		if err == nil && recorder != nil {
-			recorder.RecordBatchFlush()
-		}
-		return err
+		totalAttempts = 1
 	}
 
 	var lastErr error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
+	for attempt := 1; attempt <= totalAttempts; attempt++ {
 		lastErr = flushBatchOnce()
 		if lastErr == nil {
 			if recorder != nil {
@@ -401,17 +440,17 @@ func flushBatch() error {
 			}
 			return nil
 		}
-		if attempt < maxRetries {
+		if attempt < totalAttempts {
 			if recorder != nil {
 				recorder.RecordRetry()
 			}
-			backoff := time.Duration(attempt+1) * retryBackoff
+			backoff := exponentialBackoff(attempt, retryBackoff)
 			fmt.Fprintf(os.Stderr, "Batch flush failed (attempt %d/%d), retrying in %v: %v\n",
-				attempt+1, maxRetries, backoff, lastErr)
+				attempt, totalAttempts, backoff, lastErr)
 			time.Sleep(backoff)
 		}
 	}
-	return fmt.Errorf("batch flush failed after %d attempts: %w", maxRetries, lastErr)
+	return fmt.Errorf("batch flush failed after %d attempts: %w", totalAttempts, lastErr)
 }
 
 // flushBatchOnce performs a single attempt to write the batch to PostgreSQL.
@@ -450,7 +489,7 @@ func getUpsertQuery() string {
 	base := fmt.Sprintf(`
 		INSERT INTO %s (id, event_type, ledger_sequence, data)
 		VALUES ($1, $2, $3, $4)
-	`, tableName)
+	`, quotedTable)
 
 	switch conflictMode {
 	case "update":
@@ -470,7 +509,7 @@ func getUpsertQuery() string {
 				created_at = NOW()
 			WHERE EXCLUDED.ledger_sequence > %s.ledger_sequence
 				OR %s.ledger_sequence IS NULL
-		`, tableName, tableName)
+		`, quotedTable, quotedTable)
 	case "ignore":
 		fallthrough
 	default:
@@ -485,16 +524,23 @@ func startFlushTicker() {
 		for {
 			select {
 			case <-flushTicker.C:
-				if len(batch) > 0 {
-					if err := flushBatch(); err != nil {
-						fmt.Fprintf(os.Stderr, "Error flushing batch: %v\n", err)
-					}
+				if err := flushBatch(); err != nil {
+					fmt.Fprintf(os.Stderr, "Error flushing batch: %v\n", err)
 				}
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
+}
+
+// exponentialBackoff returns a duration with exponential growth and jitter.
+// Formula: base * 2^(attempt-1) + random jitter up to 25% of the backoff.
+func exponentialBackoff(attempt int, base time.Duration) time.Duration {
+	backoff := base * time.Duration(math.Pow(2, float64(attempt-1)))
+	// Add up to 25% jitter
+	jitter := time.Duration(rand.Int63n(int64(backoff) / 4))
+	return backoff + jitter
 }
 
 // getEnvOrDefault gets environment variable or returns default

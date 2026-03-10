@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/rand"
 	"os"
 	"os/signal"
 	"regexp"
@@ -169,30 +171,31 @@ func publishWithRetry(subject string, data []byte) error {
 		return nil
 	}
 
+	totalAttempts := maxRetries + 1
 	var lastErr error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
+	for attempt := 1; attempt <= totalAttempts; attempt++ {
 		lastErr = publishOnce()
 		if lastErr == nil {
 			return nil
 		}
-		if attempt < maxRetries {
+		if attempt < totalAttempts {
 			if recorder != nil {
 				recorder.RecordRetry()
 			}
-			backoff := time.Duration(attempt+1) * retryBackoff
+			backoff := exponentialBackoff(attempt, retryBackoff)
 			fmt.Fprintf(os.Stderr, "Publish to %s failed (attempt %d/%d), retrying in %v: %v\n",
-				subject, attempt+1, maxRetries, backoff, lastErr)
+				subject, attempt, totalAttempts, backoff, lastErr)
 			time.Sleep(backoff)
 		}
 	}
-	return fmt.Errorf("publish to %s failed after %d attempts: %w", subject, maxRetries, lastErr)
+	return fmt.Errorf("publish to %s failed after %d attempts: %w", subject, totalAttempts, lastErr)
 }
 
 // connect establishes connection to NATS server
 func connect() error {
 	opts := []nats.Option{
 		nats.Name(connName),
-		nats.Timeout(nats.DefaultTimeout),
+		nats.Timeout(time.Duration(connTimeout) * time.Second),
 		// Production resilience: reconnect forever to handle network blips
 		nats.MaxReconnects(-1),
 		nats.ReconnectWait(2 * nats.DefaultTimeout),
@@ -293,6 +296,15 @@ func handleMissingValue(path string) string {
 		os.Exit(1)
 	}
 	return "_unknown"
+}
+
+// exponentialBackoff returns a duration with exponential growth and jitter.
+// Formula: base * 2^(attempt-1) + random jitter up to 25% of the backoff.
+func exponentialBackoff(attempt int, base time.Duration) time.Duration {
+	backoff := base * time.Duration(math.Pow(2, float64(attempt-1)))
+	// Add up to 25% jitter
+	jitter := time.Duration(rand.Int63n(int64(backoff) / 4))
+	return backoff + jitter
 }
 
 // getEnvOrDefault gets environment variable or returns default
