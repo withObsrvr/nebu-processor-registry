@@ -1,0 +1,83 @@
+processor:
+  name: swap-normalizer
+  type: transform
+  description: Normalize swap candidates into unified dex_swap events
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+schema:
+  version: v1
+  identifier: nebu.dex_swap.v1
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install swap-normalizer
+
+    # Normalize swap candidates
+    token-transfer -q --start-ledger 60200000 | \
+      swap-candidate -q | \
+      swap-normalizer -q
+
+  examples: |
+    # Full pipeline with protocol detection
+    token-transfer -q --start-ledger 60200000 --end-ledger 60200100 | \
+      swap-candidate -q | \
+      soroswap-detector -q --network testnet | \
+      swap-normalizer -q | jq .
+
+    # Pipe to postgres-sink
+    token-transfer -q --start-ledger 60200000 --follow | \
+      swap-candidate -q | \
+      soroswap-detector -q --network testnet | \
+      swap-normalizer -q | \
+      postgres-sink --table dex_swaps
+
+    # Filter for Soroswap swaps only
+    token-transfer -q --start-ledger 60200000 | \
+      swap-candidate -q | \
+      soroswap-detector -q | \
+      swap-normalizer -q | \
+      jq 'select(.protocol == "soroswap")'
+
+  extended_description: |
+    # Swap Normalizer Transform Processor
+
+    Normalizes swap-candidate events into a unified `nebu.dex_swap.v1` schema
+    for downstream consumers like Prism block explorer and postgres-sink.
+
+    ---
+
+    ## How It Works
+
+    1. Identifies trader: the `pivot_address` from the swap candidate
+    2. Identifies sold asset: what the pivot sent out (first outbound leg)
+    3. Identifies bought asset: what the pivot received (last inbound leg)
+    4. Sets `protocol` from detector enrichment or `"unknown"` if unattributed
+
+    For multi-hop swaps: trader's first outbound = sold, trader's last inbound = bought.
+
+    ---
+
+    ## Output Schema
+
+    Produces `nebu.dex_swap.v1` events with human-readable swap information:
+    - `trader`: who performed the swap
+    - `sold_asset` / `sold_amount`: what they gave up
+    - `bought_asset` / `bought_amount`: what they received
+    - `protocol`: which DEX (soroswap, unknown, etc.)
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `-q, --quiet` | Suppress startup banner | false |
