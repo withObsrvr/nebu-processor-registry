@@ -13,6 +13,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/withObsrvr/nebu/pkg/processor/cli"
 )
@@ -51,7 +53,11 @@ func addFlags(cmd *cobra.Command) {
 				return err
 			}
 		}
-		routerAddr = aquariusContracts[network]
+		addr, ok := aquariusContracts[network]
+		if !ok {
+			return fmt.Errorf("unsupported network %q; supported networks: testnet, mainnet", network)
+		}
+		routerAddr = addr
 		return nil
 	}
 }

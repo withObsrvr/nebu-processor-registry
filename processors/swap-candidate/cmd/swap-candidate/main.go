@@ -80,10 +80,13 @@ func run() error {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigCh
+		signal.Stop(sigCh)
 		if !quietMode {
 			fmt.Fprintln(os.Stderr, "\nShutting down...")
 		}
-		os.Exit(0)
+		// Close stdin so the scanner loop terminates naturally,
+		// allowing run() to perform its final flush before exiting.
+		_ = os.Stdin.Close()
 	}()
 
 	if !quietMode {
@@ -120,7 +123,7 @@ func run() error {
 
 		// Extract fields from event
 		txHash, ledgerSeq, ts, inSuccessful, leg, isFee := extractTransferFields(event)
-		if txHash == "" || isFee {
+		if txHash == "" || isFee || leg == nil {
 			continue
 		}
 
@@ -197,6 +200,9 @@ func detectSwap(group *txGroup) map[string]interface{} {
 	}
 
 	addressDirs := make(map[string][]direction)
+	// Track insertion order so pivot selection is deterministic.
+	var addressOrder []string
+	seenAddrs := make(map[string]struct{})
 
 	for _, leg := range group.legs {
 		assetKey := leg.Asset.Code
@@ -205,8 +211,16 @@ func detectSwap(group *txGroup) map[string]interface{} {
 		}
 
 		// "from" address has an outbound transfer
+		if _, ok := seenAddrs[leg.From]; !ok {
+			seenAddrs[leg.From] = struct{}{}
+			addressOrder = append(addressOrder, leg.From)
+		}
 		addressDirs[leg.From] = append(addressDirs[leg.From], direction{assetKey: assetKey, direction: "out"})
 		// "to" address has an inbound transfer
+		if _, ok := seenAddrs[leg.To]; !ok {
+			seenAddrs[leg.To] = struct{}{}
+			addressOrder = append(addressOrder, leg.To)
+		}
 		addressDirs[leg.To] = append(addressDirs[leg.To], direction{assetKey: assetKey, direction: "in"})
 	}
 
@@ -214,7 +228,8 @@ func detectSwap(group *txGroup) map[string]interface{} {
 	// Collect all candidates and prefer G-addresses (human accounts) over C-addresses
 	// (contracts/pools), since the human trader is the one who initiated the swap.
 	var pivotCandidates []string
-	for addr, dirs := range addressDirs {
+	for _, addr := range addressOrder {
+		dirs := addressDirs[addr]
 		inAssets := make(map[string]bool)
 		outAssets := make(map[string]bool)
 

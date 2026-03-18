@@ -81,10 +81,12 @@ func resolveContracts() error {
 	poolSet = make(map[string]bool)
 
 	// Add known infrastructure contracts for the selected network
-	if known, ok := soroswapInfra[network]; ok {
-		for addr, role := range known {
-			infraSet[addr] = role
-		}
+	known, ok := soroswapInfra[network]
+	if !ok {
+		return fmt.Errorf("unsupported network %q; supported networks: testnet, mainnet", network)
+	}
+	for addr, role := range known {
+		infraSet[addr] = role
 	}
 
 	// Load pool addresses from file
