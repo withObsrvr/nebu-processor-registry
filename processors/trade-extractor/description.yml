@@ -1,0 +1,66 @@
+processor:
+  name: trade-extractor
+  type: origin
+  description: Extract classic DEX orderbook and liquidity pool trades from Stellar ledgers
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+schema:
+  version: v1
+  identifier: nebu.dex_trade.v1
+
+docs:
+  quick_start: |
+    nebu install trade-extractor
+
+    trade-extractor -q --start-ledger 61696585 --end-ledger 61696590 --network mainnet | jq .
+
+  examples: |
+    # Extract classic DEX trades
+    trade-extractor -q --start-ledger 61696585 --end-ledger 61696590 | jq .
+
+    # Count trades by type
+    trade-extractor -q --start-ledger 61696300 --end-ledger 61696400 | \
+      jq -r .trade_type | sort | uniq -c
+
+    # Filter for orderbook trades only
+    trade-extractor -q --start-ledger 61696300 --end-ledger 61696400 | \
+      jq 'select(.trade_type == "orderbook")'
+
+  extended_description: |
+    # Trade Extractor Origin Processor
+
+    Extracts classic DEX trades from Stellar ledgers by reading ClaimAtom
+    results from transaction operation metadata.
+
+    ## Trade Types
+
+    | Type | Source |
+    |------|--------|
+    | `orderbook` | ManageSellOffer, ManageBuyOffer, CreatePassiveSellOffer |
+    | `path_payment` | PathPaymentStrictReceive, PathPaymentStrictSend |
+    | `liquidity_pool` | AMM pool claims |
+
+    ## Output Schema
+
+    ```json
+    {
+      "_schema": "nebu.dex_trade.v1",
+      "trade_type": "orderbook",
+      "seller": "GABC...",
+      "buyer": "GDEF...",
+      "sold_asset": {"code": "USDC", "issuer": "GA5Z..."},
+      "sold_amount": "1000000",
+      "bought_asset": {"code": "XLM"},
+      "bought_amount": "5000000",
+      "offer_id": 12345,
+      "pool_id": ""
+    }
+    ```

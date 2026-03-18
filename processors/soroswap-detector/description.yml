@@ -1,0 +1,86 @@
+processor:
+  name: soroswap-detector
+  type: transform
+  description: Detect Soroswap DEX swaps by matching contract addresses in swap candidates
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install soroswap-detector
+
+    # Detect Soroswap swaps (testnet)
+    token-transfer -q --start-ledger 60200000 | \
+      swap-candidate -q | \
+      soroswap-detector -q --network testnet
+
+  examples: |
+    # Full pipeline with normalization
+    token-transfer -q --start-ledger 60200000 --end-ledger 60200100 | \
+      swap-candidate -q | \
+      soroswap-detector -q --network testnet | \
+      swap-normalizer -q | jq .
+
+    # With additional custom contracts
+    token-transfer -q --start-ledger 60200000 | \
+      swap-candidate -q | \
+      soroswap-detector -q --contracts-file my_contracts.txt
+
+    # Chain multiple detectors
+    token-transfer -q --start-ledger 60200000 | \
+      swap-candidate -q | \
+      soroswap-detector -q --network testnet | \
+      phoenix-detector -q | \
+      swap-normalizer -q
+
+  extended_description: |
+    # Soroswap Detector Transform Processor
+
+    Stateless transform that checks swap-candidate events for known Soroswap
+    contract addresses and tags matches with `protocol: "soroswap"`.
+
+    ---
+
+    ## How It Works
+
+    1. Checks `_schema == "nebu.swap_candidate.v1"` (passes through others unchanged)
+    2. Checks `contract_addresses` and `legs[*].contract_address` against known contracts
+    3. If match: adds `protocol: "soroswap"` and `router_contract` fields
+    4. Passes through unmatched candidates unchanged (for next detector in chain)
+
+    ---
+
+    ## Known Contracts
+
+    ### Testnet
+    | Contract | Role |
+    |----------|------|
+    | `CCJUD55AG6W5HAI5LRVNKAE5WDP5XGZBUDS5WNTIVDU7O264UZZE7BRD` | Router |
+    | `CDP3HMUH6SMS3S7NPGNDJLULCOXXEPSHY4JKUKMBNQMATHDHWXRRJTBY` | Factory |
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--network` | Network for known contracts (testnet\|mainnet) | testnet |
+    | `--contracts-file` | File with additional contract addresses | — |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    ---
+
+    ## Extensibility
+
+    This processor demonstrates the composable detector pattern. To add a new
+    protocol detector (e.g., Phoenix, Aquarius), clone this processor and change
+    the contract address set. Chain detectors in the pipeline — each adds its
+    protocol tag and passes through unmatched candidates.

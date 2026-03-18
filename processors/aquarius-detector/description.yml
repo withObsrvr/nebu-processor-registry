@@ -1,0 +1,88 @@
+processor:
+  name: aquarius-detector
+  type: transform
+  description: Detect Aquarius DEX swaps by matching the router contract in swap candidates
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install aquarius-detector
+
+    # Detect Aquarius swaps (mainnet)
+    token-transfer -q --start-ledger 61696300 --end-ledger 61696312 --network mainnet | \
+      swap-candidate -q | \
+      aquarius-detector -q --network mainnet
+
+  examples: |
+    # Full pipeline with normalization
+    token-transfer -q --start-ledger 61696300 --end-ledger 61696312 --network mainnet | \
+      swap-candidate -q | \
+      aquarius-detector -q --network mainnet | \
+      swap-normalizer -q | jq .
+
+    # Chain multiple detectors
+    token-transfer -q --start-ledger 61696300 --network mainnet | \
+      swap-candidate -q | \
+      soroswap-detector -q --network mainnet --pools-file pools.txt | \
+      aquarius-detector -q --network mainnet | \
+      swap-normalizer -q
+
+  extended_description: |
+    # Aquarius Detector Transform Processor
+
+    Stateless transform that checks swap-candidate events for the known Aquarius
+    DEX router contract and tags matches with `protocol: "aquarius"`.
+
+    ---
+
+    ## How It Works
+
+    1. Checks `_schema == "nebu.swap_candidate.v1"` (passes through others unchanged)
+    2. Checks `contract_addresses` against the Aquarius router address
+    3. Checks `legs[*].from` and `legs[*].to` against the router address
+    4. Checks `legs[*].contract_address` as fallback
+    5. If match: adds `protocol: "aquarius"` and `router_contract` fields
+    6. Passes through unmatched candidates unchanged (for next detector in chain)
+
+    ---
+
+    ## Known Contracts
+
+    | Network | Address | Role |
+    |---------|---------|------|
+    | Mainnet | `CBQDHNBFBZYE4MKPWBSJOPIYLW4SFSXAXUTSXJN76GNKYVYPCKWC6QUK` | Router |
+    | Testnet | `CDGX6Q3ZZIDSX2N3SHBORWUIEG2ZZEBAAMYARAXTT7M5L6IXKNJMT3GB` | Router |
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--network` | Network for router contract (testnet\|mainnet) | mainnet |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    ---
+
+    ## Why No Pools File?
+
+    Unlike Soroswap (distributed architecture with separate pool contracts),
+    Aquarius uses a monolithic router — a single contract handles all swaps.
+    Detection only needs the router address, which is built in.
+
+    ---
+
+    ## Extensibility
+
+    This processor follows the composable detector pattern. Chain it with other
+    detectors in the pipeline — each adds its protocol tag and passes through
+    unmatched candidates.

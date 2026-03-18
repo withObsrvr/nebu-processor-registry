@@ -1,0 +1,78 @@
+processor:
+  name: soroswap-pool-indexer
+  type: origin
+  description: Index Soroswap pool creation events from the factory contract via getEvents RPC
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+schema:
+  version: v1
+  identifier: nebu.soroswap_pool.v1
+
+docs:
+  quick_start: |
+    nebu install soroswap-pool-indexer
+
+    # Build pool list for soroswap-detector
+    soroswap-pool-indexer -q --start-ledger 50759000 --network mainnet | \
+      jq -r .pair_address > soroswap-pools-mainnet.txt
+
+  examples: |
+    # Full historical scan with auth
+    NEBU_RPC_AUTH="Api-Key xxx" soroswap-pool-indexer -q \
+      --rpc-url "https://rpc-pubnet.nodeswithobsrvr.co" \
+      --start-ledger 50759000 --network mainnet | \
+      jq -r .pair_address > soroswap-pools-mainnet.txt
+
+    # Use the pools file in the swap pipeline
+    token-transfer -q --start-ledger 61696585 | \
+      swap-candidate -q | \
+      soroswap-detector -q --network mainnet --pools-file soroswap-pools-mainnet.txt | \
+      swap-normalizer -q | swap-formatter -q --json
+
+    # Stream new pool creations continuously
+    soroswap-pool-indexer --start-ledger 61700000 --network mainnet
+
+  extended_description: |
+    # Soroswap Pool Indexer
+
+    Queries the Soroban RPC `getEvents` endpoint for Soroswap factory
+    `new_pair` events and emits pool addresses with their token pairs.
+
+    Uses the `getEvents` RPC method (not `getLedgers`) because contract
+    events are not included in the ledger metadata returned by `getLedgers`.
+
+    ## Output Schema
+
+    ```json
+    {
+      "_schema": "nebu.soroswap_pool.v1",
+      "pair_address": "CATU...WNMY",
+      "token_0": "CDTK...BQLV",
+      "token_1": "CAS3...OWMA",
+      "factory_address": "CA4H...7AW2",
+      "ledger_sequence": 61593375,
+      "tx_hash": "b067..."
+    }
+    ```
+
+    ## Known Factories
+
+    | Network | Factory Address |
+    |---------|----------------|
+    | Mainnet | `CA4HEQTL2WPEUYKYKCDOHCDNIV4QHNJ7EL4J4NQ6VADP7SYHVRYZ7AW2` |
+    | Testnet | `CDP3HMUH6SMS3S7NPGNDJLULCOXXEPSHY4JKUKMBNQMATHDHWXRRJTBY` |
+
+    ## Authentication
+
+    Set `NEBU_RPC_AUTH` environment variable for RPC endpoints that require auth:
+    ```
+    NEBU_RPC_AUTH="Api-Key your-key-here"
+    ```

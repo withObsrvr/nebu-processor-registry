@@ -1,0 +1,91 @@
+processor:
+  name: swap-candidate
+  type: transform
+  description: Detect swap patterns in token transfer events by buffering transfers per tx_hash
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+schema:
+  version: v1
+  identifier: nebu.swap_candidate.v1
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install swap-candidate
+
+    # Detect swaps from token transfers
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | swap-candidate -q
+
+  examples: |
+    # Simple swap detection
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      swap-candidate -q | jq .
+
+    # Full DEX swap pipeline with Soroswap attribution
+    token-transfer -q --start-ledger 60200000 --end-ledger 60200100 | \
+      swap-candidate -q | \
+      soroswap-detector -q --network testnet | \
+      swap-normalizer -q | jq .
+
+    # Require 3+ transfers per tx for multi-hop only
+    token-transfer -q --start-ledger 60200000 | \
+      swap-candidate -q --min-transfers 3
+
+    # Count swap candidates per ledger range
+    token-transfer -q --start-ledger 60200000 --end-ledger 60200100 | \
+      swap-candidate -q | wc -l
+
+  extended_description: |
+    # Swap Candidate Transform Processor
+
+    Buffers token-transfer events by tx_hash, detects swap patterns (2+
+    counter-directional transfers through a common "pivot" address), and emits
+    swap candidate events.
+
+    ---
+
+    ## How It Works
+
+    1. Buffers transfer events by `tx_hash` (skips fee events)
+    2. On ledger boundary change, flushes all buffered tx groups
+    3. For each group with 2+ transfers: builds address direction map
+    4. If any address has both inbound and outbound with different assets → swap candidate
+    5. That address becomes the "pivot" (trader or router)
+
+    Uses a custom stdin loop (not RunTransformCLI) to correctly handle
+    stateful buffering with ledger-boundary and EOF flushing.
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--min-transfers` | Minimum transfers per tx to consider | 2 |
+    | `-q, --quiet` | Suppress startup banner | false |
+
+    ---
+
+    ## Wire Format Compatibility
+
+    Handles both protojson format (from RunProtoOriginCLI) and flat SCHEMA.md format:
+    - Protojson: `meta.txHash`, `transfer.assetCode`
+    - Flat: `tx_hash`, `asset.code`
+
+    ---
+
+    ## Performance
+
+    | Metric | Value | Notes |
+    |--------|-------|-------|
+    | Memory | O(transfers per ledger) | Bounded by ledger flush |
+    | Throughput | ~50,000 events/sec | Buffering + detection per tx |
+    | Latency | 1 ledger | Flushes on boundary |
