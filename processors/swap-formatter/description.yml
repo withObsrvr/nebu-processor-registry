@@ -1,0 +1,63 @@
+processor:
+  name: swap-formatter
+  type: transform
+  description: Format dex_swap events into human-readable text with display fields for block explorers
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+docs:
+  quick_start: |
+    nebu install swap-formatter
+
+    # Plain text output
+    token-transfer -q | swap-candidate -q | swap-normalizer -q | swap-formatter -q | jq -r .display
+
+    # JSON enriched (for Prism)
+    token-transfer -q | swap-candidate -q | swap-normalizer -q | swap-formatter -q --json
+
+  examples: |
+    # Full pipeline with Soroswap detection and formatting
+    token-transfer -q --start-ledger 61696585 --end-ledger 61696586 --network mainnet | \
+      swap-candidate -q | \
+      soroswap-detector -q --network mainnet --pools-file pools.txt | \
+      swap-normalizer -q | \
+      swap-formatter -q --json | jq .
+
+    # Plain text with full addresses
+    token-transfer -q --start-ledger 61696585 --end-ledger 61696586 | \
+      swap-candidate -q | swap-normalizer -q | \
+      swap-formatter -q --long | jq -r .display
+
+  extended_description: |
+    # Swap Formatter Transform Processor
+
+    Converts `nebu.dex_swap.v1` events into human-readable display strings
+    suitable for block explorers like Prism.
+
+    ## Modes
+
+    **Plain text** (default): Emits minimal JSON with `display`, `tx_hash`, `ledger_sequence`.
+
+    **JSON enriched** (`--json`): Keeps the full `dex_swap.v1` event and adds:
+    - `display` — "GBFK...KALE swapped 25.58 EURC → 167.11 XLM at Soroswap"
+    - `display_sold` — "25.58 EURC"
+    - `display_bought` — "167.11 XLM"
+    - `display_rate` — "1 EURC = 6.5329 XLM"
+    - `display_route` — "EURC → XLM"
+    - `effective_rate` — "6.532923"
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--json` | Output enriched JSON instead of plain text | false |
+    | `--long` | Show full addresses in display string | false |
+    | `--addr-len` | Characters at start/end of truncated addresses | 4 |
+    | `-q, --quiet` | Suppress startup banner | false |

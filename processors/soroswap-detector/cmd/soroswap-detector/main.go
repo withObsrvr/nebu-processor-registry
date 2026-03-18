@@ -1,12 +1,17 @@
 // Package main provides a standalone CLI for the soroswap-detector transform processor.
 //
-// This processor checks swap-candidate events for Soroswap contract addresses
+// This processor checks swap-candidate events for Soroswap pool addresses
 // and tags matches with protocol: "soroswap".
+//
+// Soroswap's router invokes pool contracts, which invoke token contracts.
+// Token-transfer events show the token contract as contractAddress, and the
+// pool address as the from/to in transfer legs. Detection therefore checks
+// legs[*].from and legs[*].to against known pool addresses.
 //
 // Usage:
 //
-//	token-transfer | swap-candidate | soroswap-detector -q --network testnet
-//	token-transfer | swap-candidate | soroswap-detector --contracts-file extra.txt
+//	token-transfer | swap-candidate | soroswap-detector -q --network mainnet
+//	token-transfer | swap-candidate | soroswap-detector --pools-file pools.txt
 package main
 
 import (
@@ -19,26 +24,32 @@ import (
 	"github.com/withObsrvr/nebu/pkg/processor/cli"
 )
 
-var version = "0.1.0"
+var version = "0.2.0"
 
 var (
-	contractsFile string
-	network       string
+	poolsFile string
+	network   string
 )
 
-// Known Soroswap contracts by network
-var soroswapContracts = map[string]map[string]string{
+// Known Soroswap infrastructure contracts by network.
+// These are checked against contract_addresses for completeness,
+// but pool addresses (loaded via --pools-file) are the primary match target.
+var soroswapInfra = map[string]map[string]string{
 	"testnet": {
 		"CCJUD55AG6W5HAI5LRVNKAE5WDP5XGZBUDS5WNTIVDU7O264UZZE7BRD": "router",
 		"CDP3HMUH6SMS3S7NPGNDJLULCOXXEPSHY4JKUKMBNQMATHDHWXRRJTBY":  "factory",
 	},
 	"mainnet": {
-		// Mainnet contracts will be added when available
+		"CAG5LRYQ5JVEUI5TEID72EYOVX44TTUJT5BQR2J6J77FH65PCCFAJDDH": "router",
+		"CA4HEQTL2WPEUYKYKCDOHCDNIV4QHNJ7EL4J4NQ6VADP7SYHVRYZ7AW2": "factory",
 	},
 }
 
-// contractSet is the resolved set of contract addresses to match against
-var contractSet map[string]string
+// infraSet holds router/factory addresses (checked against contract_addresses)
+var infraSet map[string]string
+
+// poolSet holds known Soroswap pool addresses (checked against legs from/to)
+var poolSet map[string]bool
 
 func main() {
 	config := cli.TransformConfig{
@@ -51,10 +62,9 @@ func main() {
 }
 
 func addFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&contractsFile, "contracts-file", "", "File with additional contract addresses (one per line)")
-	cmd.Flags().StringVar(&network, "network", "testnet", "Network to use for known contracts (testnet|mainnet)")
+	cmd.Flags().StringVar(&poolsFile, "pools-file", "", "File with Soroswap pool addresses (one per line)")
+	cmd.Flags().StringVar(&network, "network", "mainnet", "Network for known infrastructure contracts (testnet|mainnet)")
 
-	// Pre-run hook to resolve contract set
 	origPreRun := cmd.PersistentPreRunE
 	cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		if origPreRun != nil {
@@ -67,26 +77,27 @@ func addFlags(cmd *cobra.Command) {
 }
 
 func resolveContracts() error {
-	contractSet = make(map[string]string)
+	infraSet = make(map[string]string)
+	poolSet = make(map[string]bool)
 
-	// Add known contracts for the selected network
-	if known, ok := soroswapContracts[network]; ok {
+	// Add known infrastructure contracts for the selected network
+	if known, ok := soroswapInfra[network]; ok {
 		for addr, role := range known {
-			contractSet[addr] = role
+			infraSet[addr] = role
 		}
 	}
 
-	// Load additional contracts from file
-	if contractsFile != "" {
-		data, err := os.ReadFile(contractsFile)
+	// Load pool addresses from file
+	if poolsFile != "" {
+		data, err := os.ReadFile(poolsFile)
 		if err != nil {
-			return fmt.Errorf("failed to read contracts file: %w", err)
+			return fmt.Errorf("failed to read pools file: %w", err)
 		}
 		scanner := bufio.NewScanner(strings.NewReader(string(data)))
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if line != "" && !strings.HasPrefix(line, "#") {
-				contractSet[line] = "custom"
+				poolSet[line] = true
 			}
 		}
 	}
@@ -94,28 +105,29 @@ func resolveContracts() error {
 	return nil
 }
 
-// detect checks a swap-candidate event for Soroswap contract addresses.
+// detect checks a swap-candidate event for Soroswap pool addresses in the
+// transfer legs. Soroswap pools appear as from/to addresses (not contractAddress)
+// because the pool invokes the token contract for transfers.
 func detect(event map[string]interface{}) map[string]interface{} {
-	// Lazy init on first call (for when PersistentPreRunE isn't called)
-	if contractSet == nil {
+	if infraSet == nil {
 		resolveContracts()
 	}
 
-	// Only process swap candidates
 	schema, _ := event["_schema"].(string)
 	if schema != "nebu.swap_candidate.v1" {
-		return event // Pass through non-candidates
+		return event
 	}
 
-	// Check contract_addresses array
-	var matchedContract string
+	var matchedAddr string
 	var matchedRole string
 
+	// Check 1: infrastructure contracts in contract_addresses
+	// (covers cases where router/factory appears as contractAddress)
 	if addrs, ok := event["contract_addresses"].([]interface{}); ok {
 		for _, addr := range addrs {
 			if addrStr, ok := addr.(string); ok {
-				if role, found := contractSet[addrStr]; found {
-					matchedContract = addrStr
+				if role, found := infraSet[addrStr]; found {
+					matchedAddr = addrStr
 					matchedRole = role
 					break
 				}
@@ -123,30 +135,64 @@ func detect(event map[string]interface{}) map[string]interface{} {
 		}
 	}
 
-	// Also check legs[*].contract_address
-	if matchedContract == "" {
+	// Check 2: pool addresses in legs from/to
+	// This is the primary detection path. Soroswap pools are the intermediary
+	// that receives one token and sends another in a swap.
+	if matchedAddr == "" {
 		if legs, ok := event["legs"].([]interface{}); ok {
 			for _, leg := range legs {
-				if legMap, ok := leg.(map[string]interface{}); ok {
-					if addr, ok := legMap["contract_address"].(string); ok {
-						if role, found := contractSet[addr]; found {
-							matchedContract = addr
-							matchedRole = role
-							break
-						}
-					}
+				legMap, ok := leg.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if from, ok := legMap["from"].(string); ok && poolSet[from] {
+					matchedAddr = from
+					matchedRole = "pool"
+					break
+				}
+				if to, ok := legMap["to"].(string); ok && poolSet[to] {
+					matchedAddr = to
+					matchedRole = "pool"
+					break
 				}
 			}
 		}
 	}
 
-	// Tag if matched
-	if matchedContract != "" {
+	// Check 3: infrastructure contracts in legs from/to and contract_address
+	// (fallback — unlikely but covers edge cases)
+	if matchedAddr == "" {
+		if legs, ok := event["legs"].([]interface{}); ok {
+			for _, leg := range legs {
+				legMap, ok := leg.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				for _, field := range []string{"from", "to", "contract_address"} {
+					if addr, ok := legMap[field].(string); ok {
+						if role, found := infraSet[addr]; found {
+							matchedAddr = addr
+							matchedRole = role
+							break
+						}
+					}
+				}
+				if matchedAddr != "" {
+					break
+				}
+			}
+		}
+	}
+
+	if matchedAddr != "" {
 		event["protocol"] = "soroswap"
-		if matchedRole == "router" {
-			event["router_contract"] = matchedContract
-		} else {
-			event["matched_contract"] = matchedContract
+		switch matchedRole {
+		case "router":
+			event["router_contract"] = matchedAddr
+		case "pool":
+			event["pool_contract"] = matchedAddr
+		default:
+			event["matched_contract"] = matchedAddr
 		}
 	}
 

@@ -74,6 +74,9 @@ func normalize(event map[string]interface{}) map[string]interface{} {
 		return nil
 	}
 
+	// Build the route: ordered list of unique asset codes through the swap path
+	route := buildRoute(legs, pivotAddress)
+
 	// Build normalized output
 	result := map[string]interface{}{
 		"_schema":          "nebu.dex_swap.v1",
@@ -88,6 +91,7 @@ func normalize(event map[string]interface{}) map[string]interface{} {
 		"bought_amount":    boughtAmount,
 		"in_successful_tx": event["in_successful_tx"],
 		"hop_count":        event["hop_count"],
+		"route":            route,
 	}
 
 	// Carry forward protocol attribution
@@ -100,8 +104,42 @@ func normalize(event map[string]interface{}) map[string]interface{} {
 	if router, ok := event["router_contract"].(string); ok {
 		result["router_contract"] = router
 	}
+	if pool, ok := event["pool_contract"].(string); ok {
+		result["pool_contract"] = pool
+	}
 
 	return result
+}
+
+// buildRoute extracts the ordered asset path from swap legs.
+// For a simple swap: ["EURC", "XLM"]
+// For multi-hop: ["USDC", "ETH", "XLM"]
+func buildRoute(legs []interface{}, pivot string) []string {
+	// Walk the legs in order, collecting the asset at each step
+	// Start with what the pivot sent out, end with what they received
+	seen := make(map[string]bool)
+	var route []string
+
+	for _, legRaw := range legs {
+		leg, ok := legRaw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		asset, _ := leg["asset"].(map[string]interface{})
+		if asset == nil {
+			continue
+		}
+		code, _ := asset["code"].(string)
+		if code == "" {
+			continue
+		}
+		if !seen[code] {
+			seen[code] = true
+			route = append(route, code)
+		}
+	}
+
+	return route
 }
 
 func copyAsset(asset map[string]interface{}) map[string]interface{} {

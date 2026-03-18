@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"os/signal"
 	"syscall"
 
@@ -209,8 +210,10 @@ func detectSwap(group *txGroup) map[string]interface{} {
 		addressDirs[leg.To] = append(addressDirs[leg.To], direction{assetKey: assetKey, direction: "in"})
 	}
 
-	// Find pivot: an address that has both inbound and outbound with different assets
-	var pivotAddress string
+	// Find pivot: an address that has both inbound and outbound with different assets.
+	// Collect all candidates and prefer G-addresses (human accounts) over C-addresses
+	// (contracts/pools), since the human trader is the one who initiated the swap.
+	var pivotCandidates []string
 	for addr, dirs := range addressDirs {
 		inAssets := make(map[string]bool)
 		outAssets := make(map[string]bool)
@@ -227,21 +230,34 @@ func detectSwap(group *txGroup) map[string]interface{} {
 			continue
 		}
 
-		// Check if any inbound asset differs from any outbound asset
+		isPivot := false
 		for inAsset := range inAssets {
 			for outAsset := range outAssets {
 				if inAsset != outAsset {
-					pivotAddress = addr
+					isPivot = true
 					break
 				}
 			}
-			if pivotAddress != "" {
+			if isPivot {
 				break
 			}
 		}
-		if pivotAddress != "" {
+		if isPivot {
+			pivotCandidates = append(pivotCandidates, addr)
+		}
+	}
+
+	// Select best pivot: prefer G-addresses (accounts) over C-addresses (contracts)
+	// and L-addresses (liquidity pool shares)
+	var pivotAddress string
+	for _, addr := range pivotCandidates {
+		if strings.HasPrefix(addr, "G") {
+			pivotAddress = addr
 			break
 		}
+	}
+	if pivotAddress == "" && len(pivotCandidates) > 0 {
+		pivotAddress = pivotCandidates[0]
 	}
 
 	if pivotAddress == "" {

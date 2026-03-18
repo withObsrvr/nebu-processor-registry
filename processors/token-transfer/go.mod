@@ -3,7 +3,7 @@ module github.com/withObsrvr/nebu-processor-registry/processors/token-transfer
 go 1.25.4
 
 require (
-	github.com/stellar/go-stellar-sdk v0.1.0
+	github.com/stellar/go-stellar-sdk v0.3.0
 	github.com/stretchr/testify v1.11.1
 	github.com/withObsrvr/nebu v0.4.0
 	google.golang.org/grpc v1.77.0
@@ -72,7 +72,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
-	github.com/stellar/go-xdr v0.0.0-20231122183749-b53fb00bcac2 // indirect
+	github.com/stellar/go-xdr v0.0.0-20260312225820-cc2b0611aabf // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
