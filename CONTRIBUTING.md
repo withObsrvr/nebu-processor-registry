@@ -49,6 +49,8 @@ my-processor/
 - ✅ Outputs newline-delimited JSON to stdout
 - ✅ Includes `_schema` and `_nebu_version` fields in output
 - ✅ Supports `-q/--quiet` flag for pipeline usage
+- ✅ Implements the `--describe-json` introspection protocol (free when using `RunProtoOriginCLI` / `RunTransformCLI` / `RunSinkCLI`)
+- ✅ Declares a `SchemaID` in its CLI config when the output has a stable schema
 - ✅ Has comprehensive README with usage examples
 - ✅ Includes tests
 - ✅ Uses semantic versioning (Git tags)
@@ -56,19 +58,21 @@ my-processor/
 **Origin Processors (MUST use protobuf-first):**
 - ✅ Defines protobuf schema in `.proto` file
 - ✅ Uses `RunProtoOriginCLI` wrapper
-- ✅ Implements `ProcessLedger(ctx, ledger) error`
+- ✅ Implements `ProcessLedger(ctx, ledger)` — **no error return** (streams-never-throw; see [BUILDING_PROTO_PROCESSORS.md](BUILDING_PROTO_PROCESSORS.md))
+- ✅ Reports per-ledger failures via `processor.ReportWarning(ctx, name, err)`
 - ✅ Emits strongly-typed protobuf messages
-- ✅ See [BUILDING_PROTO_PROCESSORS.md](BUILDING_PROTO_PROCESSORS.md)
 
 **Transform Processors:**
 - ✅ Reads JSON from stdin, writes JSON to stdout
 - ✅ Uses `RunTransformCLI` wrapper
 - ✅ Preserves schema versioning fields
+- ✅ Optionally declares `InputType`/`OutputType` on the config for richer describe output
 
 **Sink Processors:**
 - ✅ Reads JSON from stdin
 - ✅ Uses `RunSinkCLI` wrapper
-- ✅ Handles errors gracefully
+- ✅ Per-event write failures returned from `SinkFunc` are logged as warnings by the helper and the loop continues
+- ✅ Truly fatal conditions (dropped DB connection, revoked credentials) should be handled explicitly by the sink — call `processor.ReportFatal` or `os.Exit` as appropriate
 
 ### 2. Create description.yml
 
@@ -242,11 +246,13 @@ Extract structured events from raw Stellar ledger data.
 **Requirements:**
 - Defines events in `.proto file`
 - Uses `RunProtoOriginCLI` wrapper
-- Implements `ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error`
+- Implements `ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta)` — void, no error return (streams-never-throw)
+- Reports per-ledger errors via `processor.ReportWarning(ctx, name, err)`
 - Accepts `--start-ledger` and `--end-ledger` flags
 - Connects to RPC endpoint (supports `--rpc-url` flag)
 - Outputs newline-delimited JSON events (auto-converted from protobuf)
 - Supports streaming (unbounded ranges)
+- Supports `--describe-json` (automatic with `RunProtoOriginCLI`)
 
 **Quick Example:**
 
@@ -271,23 +277,35 @@ message Metadata {
 
 ```go
 // my_processor.go
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
-    events := o.extractEvents(ledger)  // Returns []*proto.MyEvent
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
+    events, err := o.extractEvents(ledger)
+    if err != nil {
+        // Per-ledger failures are reported, not returned. The pipeline
+        // continues to the next ledger. This is "streams-never-throw".
+        processor.ReportWarning(ctx, o.Name(),
+            fmt.Errorf("ledger %d: %w", ledger.LedgerSequence(), err))
+        return
+    }
 
     for _, event := range events {
         select {
         case <-ctx.Done():
-            return ctx.Err()
+            return
         case o.out <- event:  // Send proto message
         }
     }
-    return nil
 }
 ```
 
 ```go
 // cmd/my-processor/main.go
 func main() {
+    config := cli.OriginConfig{
+        Name:        "my-processor",
+        Description: "...",
+        Version:     version,
+        SchemaID:    "nebu.my_event.v1", // Populates --describe-json output
+    }
     cli.RunProtoOriginCLI(config, func(networkPass string) cli.ProtoOriginProcessor[*proto.MyEvent] {
         return NewOrigin(networkPass)
     })
@@ -322,12 +340,16 @@ func main() {
 		Name:        "my-filter",
 		Description: "Filter events based on criteria",
 		Version:     "1.0.0",
+		// Optional: declare the schema you pass through unchanged.
+		// Pass-through filters usually set both InputType and
+		// OutputType to the same proto message type.
+		SchemaID: "nebu.token_transfer.v1",
 	}
 
 	cli.RunTransformCLI(config, filterFunc, nil)
 }
 
-// Return event to keep, nil to filter out
+// Return event to keep, nil to filter out.
 func filterFunc(event map[string]interface{}) map[string]interface{} {
 	if shouldKeep(event) {
 		return event
@@ -372,7 +394,10 @@ func main() {
 	cli.RunSinkCLI(config, sinkFunc, addFlags)
 }
 
-// Return error to stop processing
+// Return an error for per-event failures. The CLI helper logs them
+// as warnings and continues to the next event (streams-never-throw).
+// For unrecoverable failures (dropped connection that can't be
+// re-established), call os.Exit or panic with a clear message.
 func sinkFunc(event map[string]interface{}) error {
 	// Lazy connect on first event
 	if db == nil {

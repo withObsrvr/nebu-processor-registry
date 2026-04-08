@@ -12,6 +12,7 @@ func main() {
 		Name:        "liquidity-pool-events",
 		Description: "Extract liquidity pool operations from Stellar ledgers",
 		Version:     version,
+		SchemaID:    "nebu.liquidity_pool_events.v1",
 	}
 
 	cli.RunProtoOriginCLI(config, func(networkPass string) cli.ProtoOriginProcessor[*liquidity_pool_events.LiquidityPoolEvent] {

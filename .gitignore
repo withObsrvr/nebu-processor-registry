@@ -30,4 +30,37 @@ Thumbs.db
 docs/shapeup
 .venv
 *.pyc
+
+# Processor build artifacts.
+# `go build ./...` run from inside processors/<name>/ builds the main
+# package at ./cmd/<name>/ and writes the binary to ./<name> (the
+# processor root). These binaries must not be checked in.
+processors/account-effects/account-effects
+processors/account-filter/account-filter
+processors/aggregator/aggregator
+processors/amount-filter/amount-filter
+processors/aquarius-detector/aquarius-detector
+processors/asset-filter/asset-filter
+processors/contract-events/contract-events
+processors/contract-filter/contract-filter
+processors/contract-invocation/contract-invocation
+processors/contract-state/contract-state
+processors/dedup/dedup
+processors/json-file-sink/json-file-sink
+processors/kafka-sink/kafka-sink
+processors/liquidity-pool-events/liquidity-pool-events
+processors/nats-sink/nats-sink
+processors/postgres-sink/postgres-sink
+processors/rate-limiter/rate-limiter
+processors/s3-sink/s3-sink
+processors/soroswap-detector/soroswap-detector
+processors/soroswap-pool-indexer/soroswap-pool-indexer
+processors/swap-candidate/swap-candidate
+processors/swap-formatter/swap-formatter
+processors/swap-normalizer/swap-normalizer
+processors/time-window/time-window
+processors/token-transfer/token-transfer
+processors/trade-extractor/trade-extractor
 processors/ttl-tracker/ttl-tracker
+processors/usdc-filter/usdc-filter
+processors/webhook-sink/webhook-sink

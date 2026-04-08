@@ -12,6 +12,7 @@ func main() {
 		Name:        "contract-state",
 		Description: "Extract contract data state changes from Stellar ledgers",
 		Version:     version,
+		SchemaID:    "nebu.contract_state.v1",
 	}
 
 	cli.RunProtoOriginCLI(config, func(networkPass string) cli.ProtoOriginProcessor[*contract_state.ContractStateEvent] {

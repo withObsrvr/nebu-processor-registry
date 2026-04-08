@@ -31,13 +31,21 @@ func main() {
 		Name:        "{NAME}",
 		Description: "{DESCRIPTION}",
 		Version:     version,
+		// Optional: declare the canonical schema this sink expects.
+		// Generic sinks (that accept any JSON shape) leave this empty.
+		// SchemaID: "nebu.token_transfer.v1",
 	}
 
 	cli.RunSinkCLI(config, processEvent, addFlags)
 }
 
-// processEvent handles a single event
-// Returns error to stop the pipeline, nil to continue
+// processEvent handles a single event.
+//
+// Returning a non-nil error causes the CLI helper to log the failure
+// as a warning and continue to the next event (streams-never-throw).
+// For unrecoverable conditions (dropped DB connection, revoked
+// credentials), call os.Exit or panic with a clear message — errors
+// returned from here are NOT treated as fatal.
 func processEvent(event map[string]interface{}) error {
 	// TODO: Implement your sink logic here
 

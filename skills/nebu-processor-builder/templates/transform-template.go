@@ -23,30 +23,36 @@ func main() {
 		Name:        "{NAME}",
 		Description: "{DESCRIPTION}",
 		Version:     version,
+		// Optional: declare the canonical schema this transform
+		// operates on. Pass-through filters set this to their
+		// upstream's schema ID (e.g., "nebu.token_transfer.v1").
+		// SchemaID: "nebu.{NAME_UNDERSCORED}.v1",
 	}
 
 	cli.RunTransformCLI(config, transformEvent, addFlags)
 }
 
-// transformEvent processes a single event
-// Returns:
-//   - (nil, nil) to filter out the event
-//   - (event, nil) to pass through (modified or unmodified)
-//   - (nil, error) to stop the pipeline with an error
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+// transformEvent processes a single event. Return:
+//   - nil   to filter the event out of the output stream
+//   - event to pass it through (modified or unmodified)
+//
+// There is no error return: transforms run on potentially millions of
+// events and one bad event must not halt the pipeline. Log
+// recoverable issues to stderr and return nil to skip them.
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	// TODO: Implement your transform logic here
 
 	// Example: Filter by field value
 	// if value, ok := event["field"].(string); ok {
 	//     if value != "expected" {
-	//         return nil, nil // Filter out
+	//         return nil // Filter out
 	//     }
 	// }
 
 	// Example: Enrich event
 	// event["enriched_field"] = "value"
 
-	return event, nil
+	return event
 }
 
 // addFlags adds custom flags to the command

@@ -3,6 +3,7 @@ package token_transfer
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/stellar/go-stellar-sdk/asset"
 	"github.com/stellar/go-stellar-sdk/ingest"
@@ -158,14 +159,20 @@ func convertEvent(sdkEvent *token_transfer.TokenTransferEvent, inSuccessfulTx bo
 	return pbEvent
 }
 
-// ProcessLedger implements processor.Origin.
-// It extracts token transfer events from the ledger and emits them.
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+// ProcessLedger implements processor.Origin. It extracts token
+// transfer events from the ledger and emits them. Per-ledger errors
+// are reported via processor.ReportWarning; the pipeline continues
+// (streams-never-throw).
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
+	ledgerSeq := ledger.LedgerSequence()
+
 	// Build a map of transaction hash -> success status
 	txSuccessMap := make(map[string]bool)
 	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
 	if err != nil {
-		return err
+		processor.ReportWarning(ctx, o.Name(),
+			fmt.Errorf("ledger %d: create tx reader: %w", ledgerSeq, err))
+		return
 	}
 	defer reader.Close()
 
@@ -180,7 +187,9 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 	// Extract events from the ledger using Stellar SDK
 	sdkEvents, err := o.eventsProc.EventsFromLedger(ledger)
 	if err != nil {
-		return err
+		processor.ReportWarning(ctx, o.Name(),
+			fmt.Errorf("ledger %d: extract events: %w", ledgerSeq, err))
+		return
 	}
 
 	// Convert SDK events to our proto events with InSuccessfulTx field
@@ -199,11 +208,9 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		default:
 			o.emitter.Emit(pbEvent)
 		}
 	}
-
-	return nil
 }

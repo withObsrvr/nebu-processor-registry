@@ -89,11 +89,12 @@ We welcome contributions! To submit your processor to the community registry:
 
 Your processor should:
 - Live in its own GitHub repository
-- Follow the [nebu processor interface](https://github.com/withObsrvr/nebu/tree/main/pkg/processor)
-- Include a `manifest.yaml` with metadata
+- Follow the [nebu processor interface](https://github.com/withObsrvr/nebu/tree/main/pkg/processor) — see [nebu's STABILITY.md](https://github.com/withObsrvr/nebu/blob/main/docs/STABILITY.md) for the stable surface
+- Use one of the `pkg/processor/cli` helpers (`RunProtoOriginCLI`, `RunTransformCLI`, `RunSinkCLI`) so the `--describe-json` introspection protocol is wired automatically
+- Declare a `SchemaID` on its CLI config (e.g., `"nebu.my_processor.v1"`)
 - Have a `cmd/main.go` for standalone CLI usage
 - Include a README with usage examples
-- Have tests
+- Have tests — including `./my-processor --describe-json | jq .` as a smoke test
 
 Example structure:
 ```
@@ -137,7 +138,9 @@ proto:
   source: github.com/your-username/nebu-processor-awesome/proto
   package: my_processor
 
-# Optional: Schema versioning
+# Optional: Schema versioning. The live JSON Schema is fetched from
+# the processor binary at describe time via --describe-json; this
+# block is a static pointer used when the binary isn't installed.
 schema:
   version: v1
   identifier: nebu.my_processor.v1
@@ -170,9 +173,16 @@ docs:
 All submitted processors are validated to ensure they:
 - ✅ Build successfully
 - ✅ Follow the nebu processor interface
+- ✅ Implement the `--describe-json` protocol (emit a valid [DescribeEnvelope](https://github.com/withObsrvr/nebu/blob/main/pkg/processor/describe.go))
 - ✅ Include proper documentation
 - ✅ Have valid `description.yml` metadata
 - ✅ Include tests
+
+The `--describe-json` check is a simple invocation:
+
+```bash
+./my-processor --describe-json | jq -e '.name and .type' > /dev/null
+```
 
 ## Governance
 
@@ -197,10 +207,13 @@ This registry (metadata only) is MIT licensed. Individual processors have their 
 
 ## Resources
 
-- [nebu Documentation](https://withobsrvr.github.io/nebu/) - Official docs and getting started
-- [nebu GitHub](https://github.com/withObsrvr/nebu) - Source code and examples
-- [Processor Interface Reference](https://github.com/withObsrvr/nebu/tree/main/pkg/processor) - Go interfaces
-- [Community Discussions](https://github.com/withObsrvr/nebu-processor-registry/discussions) - Ask questions
+- [nebu Documentation](https://withobsrvr.github.io/nebu/) — Official docs and getting started
+- [nebu GitHub](https://github.com/withObsrvr/nebu) — Source code and examples
+- [Processor Interface Reference](https://github.com/withObsrvr/nebu/tree/main/pkg/processor) — Go interfaces
+- [Stability Policy](https://github.com/withObsrvr/nebu/blob/main/docs/STABILITY.md) — What's stable in nebu, including the `--describe-json` protocol
+- [Registry Specification](https://github.com/withObsrvr/nebu/blob/main/docs/REGISTRY_SPEC.md) — Formal spec for `registry.yaml` and `description.yml`
+- [BUILDING_PROTO_PROCESSORS.md](BUILDING_PROTO_PROCESSORS.md) — Comprehensive proto-first processor tutorial
+- [Community Discussions](https://github.com/withObsrvr/nebu-processor-registry/discussions) — Ask questions
 
 ## Support
 

@@ -85,6 +85,7 @@ func main() {
         Name:        "my-origin",
         Description: "Extract events from ledgers",
         Version:     version,
+        SchemaID:    "nebu.my_origin.v1",
     }
 
     cli.RunProtoOriginCLI(config, func(networkPass string) cli.ProtoOriginProcessor[*MyEvent] {
@@ -96,15 +97,19 @@ type Origin struct {
     emitter *processor.Emitter[*MyEvent]
 }
 
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
-    // Extract events from ledger
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
+    // Extract events from ledger. Per-ledger failures should be
+    // reported via processor.ReportWarning; the pipeline continues.
     events := extractEvents(ledger)
 
     for _, event := range events {
-        o.emitter.Emit(event)
+        select {
+        case <-ctx.Done():
+            return
+        default:
+            o.emitter.Emit(event)
+        }
     }
-
-    return nil
 }
 ```
 

@@ -118,65 +118,72 @@ func (o *Origin) Close() {
 	o.emitter.Close()
 }
 
-// ProcessLedger implements processor.Origin
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
-	// TODO: Extract events from ledger
-
-	// Example: Process transactions
+// ProcessLedger implements processor.Origin.
+//
+// The method is void (streams-never-throw). Report per-ledger errors
+// via processor.ReportWarning — the pipeline will continue to the
+// next ledger. Report unrecoverable conditions via
+// processor.ReportFatal and return immediately — the runtime will
+// halt the pipeline.
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
 	if err != nil {
-		return err
+		processor.ReportWarning(ctx, o.Name(),
+			fmt.Errorf("ledger %d: create tx reader: %w", ledger.LedgerSequence(), err))
+		return
 	}
 	defer reader.Close()
 
 	for {
 		tx, err := reader.Read()
 		if err != nil {
-			break // End of transactions
+			break // End of transactions.
 		}
 
-		// Extract your events
+		// Extract your events.
 		events := extractEventsFromTx(tx)
 
 		for _, event := range events {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return
 			default:
 				o.emitter.Emit(event)
 			}
 		}
 	}
-
-	return nil
 }
 ```
 
 ## CLI Helper Usage
 
-### RunGenericOriginCLI (JSON output)
-
-**When to use:** Simple processors, flexible schema, don't need type safety
-
-```go
-cli.RunGenericOriginCLI(config, func(networkPass string) cli.GenericOriginProcessor {
-	return NewOrigin(networkPass)
-})
-```
-
-**Emits:** `map[string]interface{}` as JSON to stdout
-
-### RunProtoOriginCLI (Protobuf output)
-
-**When to use:** Type-safe events, performance critical, complex schemas
+All origin processors should use `RunProtoOriginCLI` with a typed
+protobuf event. The helper handles RPC setup, the runtime wiring,
+JSON serialization via protojson, and the `--describe-json`
+introspection protocol automatically.
 
 ```go
+config := cli.OriginConfig{
+    Name:        "my-origin",
+    Description: "...",
+    Version:     version,
+    // SchemaID is surfaced in --describe-json. Bump the version
+    // suffix when you make a breaking change to the event shape.
+    SchemaID: "nebu.my_origin.v1",
+}
+
 cli.RunProtoOriginCLI(config, func(networkPass string) cli.ProtoOriginProcessor[*MyEvent] {
-	return NewOrigin(networkPass)
+    return NewOrigin(networkPass)
 })
 ```
 
-**Emits:** Protobuf messages as JSON to stdout (automatically serialized)
+**Emits:** Protobuf messages as JSON to stdout (automatically
+serialized via protojson with camelCase field names).
+
+**Enables `--describe-json`:** The helper walks the `*MyEvent` proto
+descriptor to generate a JSON Schema Draft 2020-12 document and
+emits the full describe envelope when invoked with `--describe-json`.
+See `BUILDING_PROTO_PROCESSORS.md` for the envelope shape.
 
 ## Dependencies
 
@@ -184,12 +191,10 @@ Add to go.mod:
 
 ```go
 require (
-	github.com/stellar/go-stellar-sdk v0.1.0
-	github.com/withObsrvr/nebu v0.0.0-20251220140929-61e9fa85d21a
+	github.com/stellar/go-stellar-sdk v0.5.0
+	github.com/withObsrvr/nebu latest
+	google.golang.org/protobuf v1.36.11
 )
-
-// If using protobuf:
-require google.golang.org/protobuf v1.36.11
 ```
 
 ## Common Patterns
@@ -248,13 +253,21 @@ event := &Event{
 func TestProcessLedger(t *testing.T) {
 	origin := NewOrigin(network.TestNetworkPassphrase)
 
-	// Load test ledger
+	// Load test ledger.
 	ledger := loadTestLedger(t, "testdata/ledger.xdr")
 
-	err := origin.ProcessLedger(context.Background(), ledger)
-	assert.NoError(t, err)
+	// Attach a capturing reporter so any per-ledger warnings the
+	// processor reports are visible in the test output.
+	var reports []processor.ErrorReport
+	ctx := processor.WithReporter(context.Background(),
+		processor.ReporterFunc(func(r processor.ErrorReport) {
+			reports = append(reports, r)
+		}))
 
-	// Verify events emitted
+	origin.ProcessLedger(ctx, ledger)
+	assert.Empty(t, reports, "unexpected reports: %v", reports)
+
+	// Verify events emitted.
 	select {
 	case event := <-origin.Out():
 		assert.NotNil(t, event)
@@ -318,9 +331,8 @@ Study these examples:
 ```go
 // BAD - memory leak for large ranges
 var allLedgers []xdr.LedgerCloseMeta
-func ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+func ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	allLedgers = append(allLedgers, ledger) // Grows unbounded!
-	return nil
 }
 ```
 
@@ -328,12 +340,11 @@ func ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
 
 ```go
 // GOOD - constant memory
-func ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+func ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	events := extractEvents(ledger)
 	for _, event := range events {
 		o.emitter.Emit(event) // Stream immediately
 	}
-	return nil
 }
 ```
 
@@ -341,11 +352,10 @@ func ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
 
 ```go
 // BAD - doesn't respect cancellation
-func ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+func ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	for _, event := range manyEvents {
 		o.emitter.Emit(event) // Blocks forever if downstream cancelled
 	}
-	return nil
 }
 ```
 
@@ -353,16 +363,41 @@ func ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
 
 ```go
 // GOOD - respects cancellation
-func ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+func ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	for _, event := range manyEvents {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		default:
 			o.emitter.Emit(event)
 		}
 	}
+}
+```
+
+### ❌ DON'T: Return or propagate errors
+
+```go
+// BAD - this method is void; errors must flow through the reporter.
+func ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+	if err := something(); err != nil {
+		return err // Doesn't compile — ProcessLedger has no return value.
+	}
 	return nil
+}
+```
+
+### ✓ DO: Report per-ledger errors as warnings
+
+```go
+// GOOD - pipeline continues on a bad ledger.
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
+	if err := something(); err != nil {
+		processor.ReportWarning(ctx, o.Name(),
+			fmt.Errorf("ledger %d: %w", ledger.LedgerSequence(), err))
+		return
+	}
+	// happy path...
 }
 ```
 
