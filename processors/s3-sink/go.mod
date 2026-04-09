@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.4
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2
-	github.com/withObsrvr/nebu v0.5.0
+	github.com/withObsrvr/nebu v0.6.1
 )
 
 require (

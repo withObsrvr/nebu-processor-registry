@@ -2,7 +2,7 @@ module github.com/withObsrvr/nebu-processor-registry/processors/swap-normalizer
 
 go 1.25.4
 
-require github.com/withObsrvr/nebu v0.5.0
+require github.com/withObsrvr/nebu v0.6.1
 
 require (
 	cloud.google.com/go v0.114.0 // indirect
