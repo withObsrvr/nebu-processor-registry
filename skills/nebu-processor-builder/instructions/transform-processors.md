@@ -43,9 +43,8 @@ Create a transform processor when you need to:
     │ - Return result     │
     └──────┬──────────────┘
            │
-           ├─→ nil, nil (filter out)
-           ├─→ modified event (pass through)
-           └─→ error (stop pipeline)
+           ├─→ nil            (filter out, silently dropped)
+           └─→ event          (pass through, possibly modified)
            ↓
     ┌─────────────┐
     │ stdout      │
@@ -80,26 +79,30 @@ func main() {
 		Name:        "my-filter",
 		Description: "Filters events by criteria",
 		Version:     version,
+		// SchemaID is the canonical identifier for the events this
+		// transform operates on. Pass-through filters set this to
+		// their upstream's schema ID.
+		SchemaID: "nebu.token_transfer.v1",
 	}
 
 	cli.RunTransformCLI(config, transformEvent, addFlags)
 }
 
 // transformEvent processes a single event
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	// TODO: Implement your transform logic here
 
 	// Example: Filter by amount
 	if amount, ok := event["amount"].(float64); ok {
 		if int64(amount) < minAmount {
-			return nil, nil // Filter out
+			return nil // Filter out
 		}
 	}
 
 	// Example: Enrich event
 	event["enriched_at"] = time.Now().Unix()
 
-	return event, nil // Pass through
+	return event // Pass through
 }
 
 // addFlags adds custom flags to the command
@@ -111,40 +114,43 @@ func addFlags(cmd *cobra.Command) {
 
 ## Return Values
 
-The `transformEvent` function has three possible outcomes:
+The `transformEvent` function has two possible outcomes. **There is no error return** — transforms operate on millions of events and one bad event must not halt the pipeline (streams-never-throw).
 
-### 1. Filter Out (nil, nil)
+### 1. Filter Out (return nil)
 
 ```go
 if !shouldInclude(event) {
-	return nil, nil // Event is silently filtered
+	return nil // Event is silently filtered
 }
 ```
 
-**When to use:** Event doesn't match criteria, should be skipped
+**When to use:** Event doesn't match criteria, should be skipped.
 
-### 2. Pass Through (event, nil)
+### 2. Pass Through (return event)
 
 ```go
 // Unmodified
-return event, nil
+return event
 
 // Modified
 event["new_field"] = "value"
-return event, nil
+return event
 ```
 
-**When to use:** Event passes filter or has been modified
+**When to use:** Event passes filter or has been modified.
 
-### 3. Error (nil, error)
+### Handling bad events
+
+If the event is malformed or fails validation, log to stderr and return `nil` to skip it:
 
 ```go
-if invalid(event) {
-	return nil, fmt.Errorf("invalid event: %w", err)
+if !validShape(event) {
+	fmt.Fprintf(os.Stderr, "[my-filter] skipping malformed event: %v\n", event["id"])
+	return nil
 }
 ```
 
-**When to use:** Fatal error, should stop entire pipeline
+You cannot halt the pipeline from inside a transform. The pipeline will only stop when the upstream closes stdin, SIGINT/SIGTERM is received, or a fatal error is reported from an origin.
 
 ## CLI Helper Usage
 
@@ -156,9 +162,9 @@ cli.RunTransformCLI(config, transformEvent, addFlags)
 - Reads JSON events from stdin (line-by-line)
 - Calls `transformEvent()` for each
 - Writes non-nil results to stdout
-- Handles errors (prints to stderr, exits)
 - Supports `-q` quiet flag (suppresses banner)
 - Signal handling (SIGINT, SIGTERM)
+- Automatic `--describe-json` envelope with the full flag catalog, `SchemaID`, and (if `InputType`/`OutputType` are set) generated JSON Schemas
 
 ## Stateless vs Stateful
 
@@ -167,12 +173,12 @@ cli.RunTransformCLI(config, transformEvent, addFlags)
 Each event processed independently. No shared state.
 
 ```go
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	// Decision based only on current event
 	if event["amount"].(float64) > 1000000 {
-		return event, nil
+		return event
 	}
-	return nil, nil
+	return nil
 }
 ```
 
@@ -189,18 +195,18 @@ var (
 	seenLock sync.Mutex
 )
 
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	key := event["txHash"].(string)
 
 	seenLock.Lock()
 	defer seenLock.Unlock()
 
 	if seen[key] {
-		return nil, nil // Duplicate, filter out
+		return nil // Duplicate, filter out
 	}
 
 	seen[key] = true
-	return event, nil // First occurrence
+	return event // First occurrence
 }
 ```
 
@@ -212,61 +218,64 @@ func transformEvent(event map[string]interface{}) (map[string]interface{}, error
 ### Numeric Filtering
 
 ```go
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	amount, ok := event["amount"].(float64)
 	if !ok {
-		return nil, fmt.Errorf("invalid amount field")
+		// Malformed event — log and skip. Transforms can't halt
+		// the pipeline (streams-never-throw).
+		fmt.Fprintln(os.Stderr, "[my-filter] skipping event with missing/non-numeric amount field")
+		return nil
 	}
 
 	if amount < float64(minAmount) {
-		return nil, nil // Below threshold
+		return nil // Below threshold
 	}
 
 	if amount > float64(maxAmount) {
-		return nil, nil // Above threshold
+		return nil // Above threshold
 	}
 
-	return event, nil
+	return event
 }
 ```
 
 ### String Matching
 
 ```go
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	assetCode, ok := event["assetCode"].(string)
 	if !ok {
-		return nil, nil // No asset code
+		return nil // No asset code
 	}
 
 	if assetCode != targetAsset {
-		return nil, nil // Wrong asset
+		return nil // Wrong asset
 	}
 
-	return event, nil
+	return event
 }
 ```
 
 ### Nested Field Access
 
 ```go
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	// Access nested field safely
 	transfer, ok := event["transfer"].(map[string]interface{})
 	if !ok {
-		return nil, nil // No transfer field
+		return nil // No transfer field
 	}
 
 	amount, ok := transfer["amount"].(float64)
 	if !ok {
-		return nil, nil // No amount in transfer
+		return nil // No amount in transfer
 	}
 
 	if amount > 1000000 {
-		return event, nil
+		return event
 	}
 
-	return nil, nil
+	return nil
 }
 ```
 
@@ -274,7 +283,7 @@ func transformEvent(event map[string]interface{}) (map[string]interface{}, error
 
 ```go
 // Note: import "time" required
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	// Add calculated fields
 	if amount, ok := event["amount"].(float64); ok {
 		event["amount_usd"] = amount / 10000000 // Convert stroops to dollars
@@ -284,7 +293,7 @@ func transformEvent(event map[string]interface{}) (map[string]interface{}, error
 	event["processed_at"] = time.Now().Unix()
 	event["processor_version"] = version
 
-	return event, nil
+	return event
 }
 ```
 
@@ -298,7 +307,7 @@ var (
 	ttl      = 1 * time.Hour
 )
 
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	key := event["txHash"].(string)
 
 	cacheMux.Lock()
@@ -307,7 +316,7 @@ func transformEvent(event map[string]interface{}) (map[string]interface{}, error
 	// Check if seen recently
 	if lastSeen, exists := cache[key]; exists {
 		if time.Since(lastSeen) < ttl {
-			return nil, nil // Duplicate
+			return nil // Duplicate
 		}
 	}
 
@@ -323,7 +332,7 @@ func transformEvent(event map[string]interface{}) (map[string]interface{}, error
 		}
 	}
 
-	return event, nil
+	return event
 }
 ```
 
@@ -334,10 +343,9 @@ func transformEvent(event map[string]interface{}) (map[string]interface{}, error
 ```go
 func TestTransformEvent(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   map[string]interface{}
-		want    map[string]interface{}
-		wantErr bool
+		name  string
+		input map[string]interface{}
+		want  map[string]interface{}
 	}{
 		{
 			name: "passes filter",
@@ -361,14 +369,7 @@ func TestTransformEvent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := transformEvent(tt.input)
-
-			if tt.wantErr {
-				assert.Error(t, err)
-				return
-			}
-
-			assert.NoError(t, err)
+			got := transformEvent(tt.input)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -438,9 +439,9 @@ Study these examples:
 
 ```go
 // BAD - mutates input
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	event["modified"] = true
-	return nil, nil // Event still modified!
+	return nil // Event still modified!
 }
 ```
 
@@ -448,12 +449,12 @@ func transformEvent(event map[string]interface{}) (map[string]interface{}, error
 
 ```go
 // GOOD - clear intent
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	if shouldFilter {
-		return nil, nil // Explicitly filtered
+		return nil // Explicitly filtered
 	}
 	event["modified"] = true
-	return event, nil // Explicitly passed through
+	return event // Explicitly passed through
 }
 ```
 
@@ -462,10 +463,10 @@ func transformEvent(event map[string]interface{}) (map[string]interface{}, error
 ```go
 // BAD - memory leak
 var allEvents []map[string]interface{}
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	allEvents = append(allEvents, event)
 	// ... process batch later?
-	return event, nil
+	return event
 }
 ```
 
@@ -473,7 +474,7 @@ func transformEvent(event map[string]interface{}) (map[string]interface{}, error
 
 ```go
 // GOOD - constant memory
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	// Process immediately, don't accumulate
 	result := processEvent(event)
 	return result, nil
@@ -485,13 +486,13 @@ func transformEvent(event map[string]interface{}) (map[string]interface{}, error
 ```go
 // BAD - grows forever
 var cache = make(map[string]bool)
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	key := event["id"].(string)
 	if cache[key] {
-		return nil, nil
+		return nil
 	}
 	cache[key] = true // Never evicted!
-	return event, nil
+	return event
 }
 ```
 
@@ -499,7 +500,7 @@ func transformEvent(event map[string]interface{}) (map[string]interface{}, error
 
 ```go
 // GOOD - bounded memory
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func transformEvent(event map[string]interface{}) map[string]interface{} {
 	key := event["id"].(string)
 
 	// LRU, TTL, or size-based eviction

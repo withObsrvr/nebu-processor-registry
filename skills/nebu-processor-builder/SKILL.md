@@ -144,38 +144,13 @@ Files to create:
 - Add TODO comments where business logic goes
 - Include `addFlags()` function for custom flags
 
-**Template structure:**
-```go
-// Package main provides a standalone CLI for the {name} processor.
-//
-// {user's description}
-package main
+**Template structure:** See `templates/origin-template.go`, `templates/transform-template.go`, or `templates/sink-template.go` for the canonical per-type scaffold. The high-level shape for each type:
 
-import (
-    "github.com/spf13/cobra"
-    "github.com/withObsrvr/nebu/pkg/processor/cli"
-)
+- **Origin**: use `cli.RunProtoOriginCLI[T]` for proto events or `cli.RunGenericOriginCLI[T]` for arbitrary Go structs. Implement `ProcessLedger(ctx, ledger)` as a *void* method and emit events via a `*processor.Emitter[T]`. Per-ledger failures are reported via `processor.ReportWarning(ctx, name, err)` (streams-never-throw).
+- **Transform**: use `cli.RunTransformCLI`. The transform function signature is `func(event map[string]interface{}) map[string]interface{}` — return `nil` to filter, return the event to pass through. **There is no error return.** Log recoverable issues to stderr and return `nil` to skip.
+- **Sink**: use `cli.RunSinkCLI`. The sink function signature is `func(event map[string]interface{}) error`. Returning an error logs the failure as a warning and continues to the next event (streams-never-throw). For truly fatal conditions (dropped DB connection, revoked credentials), call `os.Exit` or `panic` directly — `RunSinkCLI` does not plumb a reporter into `SinkFunc`, so `processor.ReportFatal` is not reachable from a sink.
 
-var version = "0.1.0"
-
-func main() {
-    config := cli.{Type}Config{
-        Name:        "{name}",
-        Description: "{description}",
-        Version:     version,
-    }
-
-    cli.Run{Type}CLI(config, {handlerFunc}, addFlags)
-}
-
-// {handlerFunc} processes events
-// TODO: Implement business logic here
-
-// addFlags adds custom flags
-func addFlags(cmd *cobra.Command) {
-    // TODO: Add processor-specific flags
-}
-```
+Every config struct (`OriginConfig`, `TransformConfig`, `SinkConfig`) supports a `SchemaID` field — set it to a canonical event identifier like `"nebu.my_processor.v1"`. It's surfaced in the `--describe-json` envelope that every helper wires up automatically.
 
 ### Step 6: Generate go.mod
 
@@ -187,15 +162,17 @@ module github.com/withObsrvr/nebu/examples/processors/{name}
 go 1.25.4
 
 require (
-    github.com/withObsrvr/nebu v0.0.0-20251220140929-61e9fa85d21a
+    github.com/withObsrvr/nebu v0.6.1
 )
 
 // Add type-specific dependencies:
-// - Origin: github.com/stellar/go-stellar-sdk v0.1.0
+// - Origin: github.com/stellar/go-stellar-sdk v0.5.0
 // - Origin (proto): google.golang.org/protobuf v1.36.11
 // - Sink (postgres): github.com/lib/pq v1.10.9
 // - Sink (nats): github.com/nats-io/nats.go v1.47.0
 ```
+
+Always pin a concrete `github.com/withObsrvr/nebu` version (e.g., `v0.6.1`) in the `require` block — do not write `latest`, which is not a valid Go module version. Check [the nebu releases page](https://github.com/withObsrvr/nebu/releases) for the current tag.
 
 ### Step 7: Generate README.md
 
@@ -361,9 +338,11 @@ Examples: "my-filter", "usdc-tracker", "pg-sink"
 - Processing transaction data
 
 **Key patterns:**
-- Implement `ProcessLedger(ctx, ledger xdr.LedgerCloseMeta) error`
+- Implement `ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta)` — the method is **void** (streams-never-throw). Report per-ledger failures via `processor.ReportWarning(ctx, name, err)` and `return`. Report unrecoverable failures via `processor.ReportFatal(ctx, name, err)` and `return`.
 - Use `Emitter[T]` for typed event output
-- Choose between proto-based or JSON-based output
+- Prefer protobuf-based output (`RunProtoOriginCLI[T]`) — you get automatic JSON Schema generation in `--describe-json` for free
+- Set `SchemaID` on `OriginConfig` (e.g., `"nebu.my_processor.v1"`)
+- Optionally wire `Hooks []runtime.Hooks` on `OriginConfig` for progress bars, metrics, or checkpointing — see `docs/HOOKS.md` in the nebu repo
 
 **Reference:** `token-transfer`, `contract-events`
 
@@ -377,9 +356,11 @@ Examples: "my-filter", "usdc-tracker", "pg-sink"
 
 **Key patterns:**
 - Read JSON from stdin, write to stdout
-- Function signature: `func(event map[string]interface{}) (map[string]interface{}, error)`
-- Return `nil, nil` to filter out
-- Return modified event to pass through
+- Function signature: `func(event map[string]interface{}) map[string]interface{}` — **no error return**
+- Return `nil` to filter out
+- Return the event (modified or unchanged) to pass through
+- There is no way to halt the pipeline from inside a transform. Log recoverable issues to stderr and `return nil` to skip the bad event.
+- Set `SchemaID` on `TransformConfig`; optionally set `InputType`/`OutputType` to a zero-value proto.Message for richer `--describe-json` schemas.
 - Can be stateless or stateful
 
 **Reference:** `amount-filter`, `dedup`, `usdc-filter`
@@ -394,10 +375,12 @@ Examples: "my-filter", "usdc-tracker", "pg-sink"
 
 **Key patterns:**
 - Read JSON from stdin
-- Handle connection management
+- Function signature: `func(event map[string]interface{}) error`. Returning an error logs the failure as a warning and **continues to the next event** (streams-never-throw).
+- Handle connection management (lazy initialization on first event, not in `main`)
 - Implement batching for performance
-- Handle errors gracefully
 - Flush on shutdown
+- For truly fatal conditions (dropped DB connection that can't be re-established, revoked credentials), call `os.Exit` or `panic` directly. **`processor.ReportFatal` is not reachable from a sink** — `RunSinkCLI` does not plumb a reporter into `SinkFunc`.
+- Set `SchemaID` on `SinkConfig` to declare the canonical event shape you expect (generic sinks that accept any JSON shape can leave this empty).
 
 **Reference:** `json-file-sink`, `postgres-sink`, `nats-sink`
 

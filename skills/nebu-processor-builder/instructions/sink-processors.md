@@ -80,12 +80,24 @@ func main() {
 		Name:        "my-sink",
 		Description: "Write events to destination",
 		Version:     version,
+		// Optional: declare the canonical schema this sink expects.
+		// Generic sinks that accept any JSON shape leave this empty.
+		SchemaID: "nebu.token_transfer.v1",
 	}
 
 	cli.RunSinkCLI(config, processEvent, addFlags)
 }
 
-// processEvent handles a single event
+// processEvent handles a single event.
+//
+// Returning a non-nil error causes the CLI helper to log the failure
+// as a warning and continue to the next event (streams-never-throw).
+// Returning an error does NOT halt the pipeline.
+//
+// For truly unrecoverable conditions (dropped DB connection that
+// can't be re-established, revoked credentials), call os.Exit or
+// panic directly. RunSinkCLI does not plumb a reporter into
+// SinkFunc, so processor.ReportFatal is not reachable from a sink.
 func processEvent(event map[string]interface{}) error {
 	// TODO: Implement your sink logic here
 
@@ -109,9 +121,10 @@ cli.RunSinkCLI(config, processEvent, addFlags)
 **What it does:**
 - Reads JSON events from stdin (line-by-line)
 - Calls `processEvent()` for each
-- Handles errors (prints to stderr)
+- Logs per-event errors as warnings and continues (streams-never-throw)
 - Supports `-q` quiet flag
-- Signal handling (graceful shutdown)
+- Signal handling (graceful shutdown on SIGINT/SIGTERM)
+- Automatic `--describe-json` envelope with the flag catalog and `SchemaID`. If you set `SinkConfig.InputType` to a zero-value `proto.Message`, a JSON Schema for the expected input shape is also generated and surfaced in the envelope.
 
 ## Connection Management
 
@@ -400,16 +413,29 @@ func isRetriable(err error) bool {
 
 ### Logging Errors
 
+Per-event errors are logged as warnings and the loop continues — returning `err` is the idiomatic way to surface them, but it does **not** halt the pipeline:
+
 ```go
 func processEvent(event map[string]interface{}) error {
 	err := writeToDestination(event)
 	if err != nil {
-		// Log but don't stop pipeline
-		log.Printf("Error processing event %v: %v", event["id"], err)
-
-		// Or stop pipeline
+		// Both of the below behave identically in v0.6.x: the error
+		// is logged as a warning and the loop advances.
 		return err
 	}
+	return nil
+}
+```
+
+If a condition is genuinely unrecoverable (credential revoked, disk full, required resource gone), `os.Exit` is the only way to halt a sink today:
+
+```go
+func processEvent(event map[string]interface{}) error {
+	if _, err := os.Stat(outputDir); err != nil {
+		fmt.Fprintf(os.Stderr, "[my-sink] output directory disappeared: %v\n", err)
+		os.Exit(1)
+	}
+	// ... rest of sink logic
 	return nil
 }
 ```
@@ -559,6 +585,33 @@ func processEvent(event map[string]interface{}) error {
 		db = connectDB() // Once
 	}
 	// Reuse db
+}
+```
+
+### ❌ DON'T: Expect `processor.ReportFatal` to work from a sink
+
+```go
+// BAD - unreachable. SinkFunc has no ctx, so there's no reporter to call.
+func processEvent(event map[string]interface{}) error {
+	if credentialsExpired() {
+		processor.ReportFatal(ctx, "my-sink", errors.New("creds revoked")) // won't compile — no ctx
+		return nil
+	}
+	return writeToDB(event)
+}
+```
+
+### ✓ DO: Call `os.Exit` or `panic` for unrecoverable sink failures
+
+```go
+// GOOD - RunSinkCLI doesn't plumb a reporter into SinkFunc, so the
+// only way to halt a sink on a truly fatal condition is to exit.
+func processEvent(event map[string]interface{}) error {
+	if credentialsExpired() {
+		fmt.Fprintln(os.Stderr, "[my-sink] credentials revoked; halting")
+		os.Exit(1)
+	}
+	return writeToDB(event)
 }
 ```
 
