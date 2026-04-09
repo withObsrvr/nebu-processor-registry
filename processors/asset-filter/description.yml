@@ -64,14 +64,14 @@ docs:
 
     ## How It Works
 
-    The filter checks the asset field in transfer, mint, burn, and clawback events:
+    The filter checks the flat asset fields in transfer, mint, burn, and clawback events:
 
     | Event Type | Field Checked |
     |------------|---------------|
-    | Transfer | `transfer.asset.issuedAsset.assetCode` |
-    | Mint | `mint.asset.issuedAsset.assetCode` |
-    | Burn | `burn.asset.issuedAsset.assetCode` |
-    | Clawback | `clawback.asset.issuedAsset.assetCode` |
+    | Transfer | `transfer.assetCode` |
+    | Mint | `mint.assetCode` |
+    | Burn | `burn.assetCode` |
+    | Clawback | `clawback.assetCode` |
 
     Fee events are always filtered out (they are XLM-only and use a different structure).
 

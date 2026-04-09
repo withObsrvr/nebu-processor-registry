@@ -38,12 +38,12 @@ docs:
     # Track micro-payments (<0.01 XLM)
     token-transfer --start-ledger 60200000 | \
       amount-filter --max 100000 | \
-      jq -c '{amount: .transfer.amount, asset: .transfer.asset.code}'
+      jq -c '{amount: .transfer.amount, asset: .transfer.assetCode}'
 
     # Filter dust amounts out
     token-transfer --start-ledger 60200000 | \
       amount-filter --min 10000 | \
-      postgres-sink --table transfers
+      postgres-sink --dsn "$DSN" --table transfers
 
     # Range filter (between 1 and 100 XLM)
     token-transfer --start-ledger 60200000 | \
@@ -177,7 +177,7 @@ docs:
     token-transfer --start-ledger 60200000 --follow | \
       usdc-filter | \
       amount-filter --min 10000000000 | \
-      postgres-sink --table large_usdc_transfers
+      postgres-sink --dsn "$DSN" --table large_usdc_transfers
     ```
 
     **3. Exclude dust from analytics:**

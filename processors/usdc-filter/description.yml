@@ -57,10 +57,10 @@ docs:
 
     | Event Type | Field Checked |
     |------------|---------------|
-    | Transfer | `transfer.asset.code == "USDC"` |
-    | Mint | `mint.asset.code == "USDC"` |
-    | Burn | `burn.asset.code == "USDC"` |
-    | Clawback | `clawback.asset.code == "USDC"` |
+    | Transfer | `transfer.assetCode == "USDC"` |
+    | Mint | `mint.assetCode == "USDC"` |
+    | Burn | `burn.assetCode == "USDC"` |
+    | Clawback | `clawback.assetCode == "USDC"` |
 
     **Note:** Fee events are filtered out (they are XLM-only).
 
@@ -88,10 +88,10 @@ docs:
     **Input → Output Example:**
 
     ```
-    Input:  {"transfer": {"asset": {"code": "USDC", ...}}, ...}  → Passed through
-    Input:  {"transfer": {"asset": {"code": "XLM", ...}}, ...}   → Filtered out
-    Input:  {"transfer": {"asset": {"code": "AQUA", ...}}, ...}  → Filtered out
-    Input:  {"mint": {"asset": {"code": "USDC", ...}}, ...}      → Passed through
+    Input:  {"transfer": {"assetCode": "USDC", ...}, ...}  → Passed through
+    Input:  {"transfer": {"assetCode": "XLM", ...}, ...}   → Filtered out
+    Input:  {"transfer": {"assetCode": "AQUA", ...}, ...}  → Filtered out
+    Input:  {"mint": {"assetCode": "USDC", ...}, ...}      → Passed through
     Input:  {"fee": {"amount": "100"}, ...}                      → Filtered out
     ```
 
@@ -178,10 +178,10 @@ docs:
     This processor is equivalent to:
     ```bash
     token-transfer ... | jq -c 'select(
-      (.transfer.asset.code == "USDC") or
-      (.mint.asset.code == "USDC") or
-      (.burn.asset.code == "USDC") or
-      (.clawback.asset.code == "USDC")
+      (.transfer.assetCode == "USDC") or
+      (.mint.assetCode == "USDC") or
+      (.burn.assetCode == "USDC") or
+      (.clawback.assetCode == "USDC")
     )'
     ```
 

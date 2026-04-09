@@ -39,7 +39,7 @@ docs:
     # Custom time range (Unix timestamps)
     contract-events --start-ledger 60200000 --end-ledger 60300000 | \
       time-window --start 1704067200 --end 1704153600 | \
-      postgres-sink --table jan_2024_events
+      postgres-sink --dsn "$DSN" --table jan_2024_events
 
     # Recent contract activity (last 30 minutes)
     contract-invocation --start-ledger 60200000 --follow | \
@@ -49,15 +49,16 @@ docs:
   extended_description: |
     # Time Window Transform Processor
 
-    Filters events based on time ranges using ledger timestamps. Supports
-    relative time windows (`--last 1h`) and absolute Unix timestamp ranges.
+    Filters events based on time ranges using estimated event time derived from
+    ledger sequence. Supports relative time windows (`--last 1h`) and absolute
+    Unix timestamp ranges.
 
     ---
 
     ## Ledger-to-Time Conversion
 
     Stellar ledgers close approximately every 5 seconds. This processor uses
-    the `meta.timestamp` field (ISO 8601) or estimates time from ledger sequence.
+    `meta.ledgerSequence` and estimates time from ledger sequence.
 
     | Duration  | Approximate Ledgers | Calculation   |
     |-----------|---------------------|---------------|
@@ -76,8 +77,8 @@ docs:
     | Aspect | Value |
     |--------|-------|
     | Precision | ±5 seconds (one ledger interval) |
-    | Source | `meta.timestamp` field (ISO 8601) |
-    | Fallback | Ledger sequence × 5 seconds from genesis |
+    | Source | `meta.ledgerSequence` |
+    | Calculation | `stellar_genesis + ledgerSequence × 5s` |
     | Genesis | July 1, 2015 00:00:00 UTC (Stellar mainnet) |
 
     **Note:** Actual ledger close times vary slightly (4-6 seconds), so time
@@ -175,7 +176,7 @@ docs:
     # Jan 7, 2024 23:59:59 UTC = 1704671999
     contract-events --start-ledger 60200000 --end-ledger 60500000 | \
       time-window --start 1704067200 --end 1704671999 | \
-      postgres-sink --table jan_week1_events
+      postgres-sink --dsn "$DSN" --table jan_week1_events
     ```
 
     **4. Sliding window aggregation:**
@@ -228,7 +229,7 @@ docs:
 
     ## Limitations
 
-    - Requires `meta.timestamp` or `meta.ledgerSequence` field
+    - Requires `meta.ledgerSequence` field
     - Time estimates have ±5 second accuracy
     - Cannot handle timezone-specific ranges (uses UTC)
     - `--last` is relative to current time at startup

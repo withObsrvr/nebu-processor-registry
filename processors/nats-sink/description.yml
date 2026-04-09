@@ -163,7 +163,7 @@ docs:
       nats-sink --subject "contracts.{eventType}" --jetstream
 
     # Consumer 1: Index transfers
-    nats sub "contracts.transfer" | postgres-sink --table transfers
+    nats sub "contracts.transfer" | postgres-sink --dsn "$DSN" --table transfers
 
     # Consumer 2: Alert on mints
     nats sub "contracts.mint" | jq 'select(.amount > 1000000)' | alert-service

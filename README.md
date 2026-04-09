@@ -15,8 +15,17 @@ nebu processors are composable Unix-style programs that process Stellar ledger d
 
 ## Using Processors from this Registry
 
+First install the nebu CLI:
+
 ```bash
-# List all available processors
+go install github.com/withObsrvr/nebu/cmd/nebu@latest
+export PATH="$HOME/go/bin:$PATH"
+```
+
+Then you can discover and install processors from this registry through nebu itself:
+
+```bash
+# List all available processors (built-in + community)
 nebu list
 
 # Install a community processor
@@ -25,6 +34,15 @@ nebu install <processor-name>
 # Use in pipelines
 <origin-processor> | <transform-processor> | <sink-processor>
 ```
+
+If you cloned this repository locally and want to build a processor directly from source instead of going through `nebu install`, you can do that too:
+
+```bash
+cd processors/<processor-name>
+go install ./cmd/<processor-name>
+```
+
+**Note:** cloning this registry repo alone does not install the `nebu` CLI.
 
 ## Claude Code Skills for Processor Development
 
