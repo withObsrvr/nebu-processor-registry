@@ -52,17 +52,20 @@ examples/processors/{name}/
 
 Nebu provides CLI helpers in `pkg/processor/cli` to handle:
 - Argument parsing (flags, env vars)
-- Stdin/stdout handling
-- Error reporting
-- Signal handling
-- Schema versioning
+- Stdin/stdout handling (including pipe auto-detection)
+- Streams-never-throw error reporting via `processor.ReportWarning` / `processor.ReportFatal`
+- Signal handling (SIGINT/SIGTERM)
+- Schema versioning via `SchemaID`
+- `--describe-json` introspection envelope (automatic for every helper-wrapped processor)
+- Optional runtime hooks for progress bars, metrics, and checkpoints (`OriginConfig.Hooks`)
 
 ### Available Helpers
 
 **For Origins:**
 ```go
-cli.RunProtoOriginCLI()      // For protobuf-based output
-cli.RunGenericOriginCLI()    // For JSON output
+cli.RunProtoOriginCLI[T proto.Message]()  // protobuf event type (preferred)
+cli.RunGenericOriginCLI[T any]()          // arbitrary Go struct
+cli.RunOriginCLI()                         // legacy: token_transfer.TokenTransferEvent only
 ```
 
 **For Transforms:**
@@ -121,20 +124,21 @@ func main() {
         Name:        "my-filter",
         Description: "Filter events by criteria",
         Version:     version,
+        SchemaID:    "nebu.token_transfer.v1", // or your own schema id
     }
 
     cli.RunTransformCLI(config, transformEvent, addFlags)
 }
 
-func transformEvent(event map[string]interface{}) (map[string]interface{}, error) {
-    // Return nil, nil to filter out
+// transformEvent has no error return (streams-never-throw).
+// Return nil to drop the event; return the event (possibly modified) to pass through.
+func transformEvent(event map[string]interface{}) map[string]interface{} {
     if !shouldInclude(event) {
-        return nil, nil
+        return nil // Filter out
     }
 
-    // Return modified event
     event["enriched"] = "data"
-    return event, nil
+    return event
 }
 
 func addFlags(cmd *cobra.Command) {
@@ -175,20 +179,21 @@ module github.com/withObsrvr/nebu/examples/processors/{name}
 go 1.25.4
 
 require (
-    github.com/withObsrvr/nebu v0.0.0-20251220140929-61e9fa85d21a
+    github.com/withObsrvr/nebu v0.6.1
     // Add processor-specific dependencies
 )
 
 // CRITICAL: NO replace directives!
 // Use go.work for local development instead
+// NEVER write "latest" as a module version — only concrete tags.
 ```
 
 ### go.work for Development
 
-When working locally, add processor to workspace:
+When working locally, add your processor to the nebu workspace:
 
 ```go
-// /home/tillman/Documents/nebu/go.work
+// <path-to-nebu>/go.work
 use (
     .
     ./examples/processors/my-processor
@@ -267,28 +272,33 @@ cat /tmp/test.jsonl | ./my-processor | jq -c . | wc -l
 
 ### Transform Processors
 
+Transforms have no error return (streams-never-throw):
+
 ```go
 // Filter out (silent)
-return nil, nil
+return nil
 
-// Pass through
-return event, nil
-
-// Error (stops pipeline)
-return nil, fmt.Errorf("validation failed: %w", err)
+// Pass through (possibly modified)
+return event
 ```
 
+If you hit a bad event, log to stderr and return `nil` to skip it. You cannot halt the pipeline from inside a transform.
+
 ### Sink Processors
+
+Sinks return `error`, but returning an error does **not** stop the pipeline — it logs a warning and continues to the next event (streams-never-throw):
 
 ```go
 // Success
 return nil
 
-// Retriable error
+// Recoverable failure (logged as warning, loop continues)
 return fmt.Errorf("temporary failure: %w", err)
 
-// Fatal error
-log.Fatal("configuration invalid")
+// Unrecoverable failure (must halt the process directly — RunSinkCLI
+// does not plumb a reporter into SinkFunc, so processor.ReportFatal
+// is not reachable from sinks).
+os.Exit(1)   // or panic("configuration invalid")
 ```
 
 ## Performance Considerations
