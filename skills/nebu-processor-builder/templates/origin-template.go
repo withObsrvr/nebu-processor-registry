@@ -1,15 +1,26 @@
 // Package main provides a standalone CLI for the {NAME} processor.
 //
 // {DESCRIPTION}
+//
+// Origin processors emit typed protobuf events. Define your event
+// shape in proto/{NAME_UNDERSCORED}.proto and generate Go code before
+// building this binary. See BUILDING_PROTO_PROCESSORS.md for the full
+// walkthrough.
 package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/withObsrvr/nebu/pkg/processor"
 	"github.com/withObsrvr/nebu/pkg/processor/cli"
+
+	// TODO: replace with your generated proto package path.
+	pb "github.com/your-username/nebu-processor-{NAME}/proto"
 )
 
 var version = "0.1.0"
@@ -19,90 +30,87 @@ func main() {
 		Name:        "{NAME}",
 		Description: "{DESCRIPTION}",
 		Version:     version,
+		// SchemaID is the canonical identifier for the events this
+		// processor emits. Bump the version suffix on breaking changes.
+		SchemaID: "nebu.{NAME_UNDERSCORED}.v1",
 	}
 
-	// For JSON output (simpler)
-	cli.RunGenericOriginCLI(config, func(networkPass string) cli.GenericOriginProcessor {
+	// RunProtoOriginCLI handles:
+	// - Connecting to RPC (--start-ledger, --end-ledger, --rpc-url)
+	// - Running the origin through the nebu runtime
+	// - Converting protobuf events to JSON via protojson
+	// - The --describe-json introspection protocol (auto-generated
+	//   JSON Schema from the *pb.YourEvent type)
+	cli.RunProtoOriginCLI(config, func(networkPass string) cli.ProtoOriginProcessor[*pb.YourEvent] {
 		return NewOrigin(networkPass)
 	})
-
-	// OR for protobuf output (type-safe, more complex)
-	// cli.RunProtoOriginCLI(config, func(networkPass string) cli.ProtoOriginProcessor[*YourProtoType] {
-	//     return NewOrigin(networkPass)
-	// })
 }
 
-// Origin extracts events from Stellar ledgers
+// Origin extracts {NAME} events from Stellar ledgers.
 type Origin struct {
 	passphrase string
-	emitter    *processor.Emitter[map[string]interface{}] // or *YourProtoType
+	emitter    *processor.Emitter[*pb.YourEvent]
 }
 
+// NewOrigin creates a new {NAME} origin processor.
 func NewOrigin(passphrase string) *Origin {
 	return &Origin{
 		passphrase: passphrase,
-		emitter:    processor.NewEmitter[map[string]interface{}](1024),
+		// Buffer size of 1024 gives the emitter headroom so extraction
+		// doesn't block on JSON serialization. Tune for your workload.
+		emitter: processor.NewEmitter[*pb.YourEvent](1024),
 	}
 }
 
-// Name implements processor.Processor
-func (o *Origin) Name() string {
-	return "{NAME}"
-}
+// Name implements processor.Processor.
+func (o *Origin) Name() string { return "{NAME}" }
 
-// Type implements processor.Processor
-func (o *Origin) Type() processor.Type {
-	return processor.TypeOrigin
-}
+// Type implements processor.Processor.
+func (o *Origin) Type() processor.Type { return processor.TypeOrigin }
 
-// Out returns the output channel
-func (o *Origin) Out() <-chan map[string]interface{} {
-	return o.emitter.Out()
-}
+// Out returns the output channel consumed by the runtime.
+func (o *Origin) Out() <-chan *pb.YourEvent { return o.emitter.Out() }
 
-// Close closes the emitter
-func (o *Origin) Close() {
-	o.emitter.Close()
-}
+// Close closes the emitter. Called by the runtime at shutdown.
+func (o *Origin) Close() { o.emitter.Close() }
 
-// ProcessLedger implements processor.Origin
-// This is called for each ledger in the range
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
-	// TODO: Extract events from the ledger
-
-	// Example: Process transactions
+// ProcessLedger implements processor.Origin. It does not return an
+// error — per-ledger failures are reported via processor.ReportWarning
+// (see https://github.com/withObsrvr/nebu/blob/main/docs/STABILITY.md
+// for the streams-never-throw contract).
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
 	if err != nil {
-		return err
+		processor.ReportWarning(ctx, o.Name(),
+			fmt.Errorf("ledger %d: create tx reader: %w", ledger.LedgerSequence(), err))
+		return
 	}
 	defer reader.Close()
 
 	for {
 		tx, err := reader.Read()
 		if err != nil {
-			break // End of transactions
+			if errors.Is(err, io.EOF) {
+				break // Clean end of transactions.
+			}
+			// Non-EOF read failures are real errors (corrupt XDR,
+			// partial reads). Surface them via ReportWarning with
+			// the ledger sequence so they aren't silently swallowed.
+			processor.ReportWarning(ctx, o.Name(),
+				fmt.Errorf("ledger %d: read tx: %w", ledger.LedgerSequence(), err))
+			return
 		}
 
-		// TODO: Extract your specific events from tx
-		// events := extractEventsFromTx(tx)
-
-		// Example event structure
-		event := map[string]interface{}{
-			"ledgerSequence": ledger.LedgerSequence(),
-			"closedAt":       ledger.LedgerCloseTime(),
-			"txHash":         tx.Result.TransactionHash.HexString(),
-			"successful":     tx.Result.Successful(),
-			// TODO: Add your event-specific fields
+		// TODO: extract your domain events from tx and populate pb.YourEvent.
+		event := &pb.YourEvent{
+			// TODO: fill in your fields.
 		}
 
-		// Emit event
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		default:
 			o.emitter.Emit(event)
 		}
 	}
-
-	return nil
 }

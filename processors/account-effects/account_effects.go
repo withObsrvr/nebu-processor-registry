@@ -32,14 +32,18 @@ func (o *Origin) Type() processor.Type            { return processor.TypeOrigin 
 func (o *Origin) Out() <-chan *AccountEffect       { return o.out }
 func (o *Origin) Close()                          { close(o.out) }
 
-// ProcessLedger extracts account effects from the ledger.
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+// ProcessLedger extracts account effects from the ledger. Per-ledger
+// errors are reported via processor.ReportWarning; the pipeline
+// continues (streams-never-throw).
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	sequence := ledger.LedgerSequence()
 	closeTime := int64(ledger.LedgerHeaderHistoryEntry().Header.ScpValue.CloseTime)
 
 	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
 	if err != nil {
-		return fmt.Errorf("error creating transaction reader: %w", err)
+		processor.ReportWarning(ctx, o.Name(),
+			fmt.Errorf("ledger %d: create tx reader: %w", sequence, err))
+		return
 	}
 	defer reader.Close()
 
@@ -49,7 +53,9 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 			if err == io.EOF {
 				break
 			}
-			return err
+			processor.ReportWarning(ctx, o.Name(),
+				fmt.Errorf("ledger %d: read tx: %w", sequence, err))
+			return
 		}
 
 		txHash := tx.Result.TransactionHash.HexString()
@@ -71,7 +77,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 			for _, effect := range effects {
 				select {
 				case <-ctx.Done():
-					return ctx.Err()
+					return
 				case o.out <- effect:
 				}
 			}
@@ -82,13 +88,11 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 		for _, effect := range changeEffects {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return
 			case o.out <- effect:
 			}
 		}
 	}
-
-	return nil
 }
 
 func (o *Origin) extractEffects(op xdr.Operation, account string, meta *EventMeta) []*AccountEffect {

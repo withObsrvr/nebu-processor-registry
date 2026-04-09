@@ -27,15 +27,20 @@ func NewContractEventsOriginProto(networkPassphrase string) *ContractEventsOrigi
 	}
 }
 
-// ProcessLedger implements processor.Origin
-func (p *ContractEventsOriginProto) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+// ProcessLedger implements processor.Origin. Per-ledger errors are
+// reported via processor.ReportWarning; the pipeline continues
+// (streams-never-throw).
+func (p *ContractEventsOriginProto) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
+	ledgerSeq := ledger.LedgerSequence()
+
 	txReader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(p.networkPassphrase, ledger)
 	if err != nil {
-		return fmt.Errorf("error creating transaction reader: %w", err)
+		processor.ReportWarning(ctx, p.Name(),
+			fmt.Errorf("ledger %d: create tx reader: %w", ledgerSeq, err))
+		return
 	}
 	defer txReader.Close()
 
-	ledgerSeq := ledger.LedgerSequence()
 	closeTime := int64(ledger.LedgerHeaderHistoryEntry().Header.ScpValue.CloseTime)
 
 	// Process each transaction
@@ -46,7 +51,9 @@ func (p *ContractEventsOriginProto) ProcessLedger(ctx context.Context, ledger xd
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("error reading transaction: %w", err)
+			processor.ReportWarning(ctx, p.Name(),
+				fmt.Errorf("ledger %d: read tx: %w", ledgerSeq, err))
+			return
 		}
 
 		// Get transaction events using SDK helper (handles V3/V4 compatibility)
@@ -93,7 +100,7 @@ func (p *ContractEventsOriginProto) ProcessLedger(ctx context.Context, ledger xd
 
 				select {
 				case <-ctx.Done():
-					return ctx.Err()
+					return
 				case p.out <- contractEvent:
 					// Event sent
 				}
@@ -120,7 +127,7 @@ func (p *ContractEventsOriginProto) ProcessLedger(ctx context.Context, ledger xd
 
 				select {
 				case <-ctx.Done():
-					return ctx.Err()
+					return
 				case p.out <- contractEvent:
 					// Event sent
 				}
@@ -129,8 +136,6 @@ func (p *ContractEventsOriginProto) ProcessLedger(ctx context.Context, ledger xd
 
 		txIndex++
 	}
-
-	return nil
 }
 
 // buildContractEvent constructs a ContractEvent protobuf from XDR data

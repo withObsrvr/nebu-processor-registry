@@ -32,6 +32,8 @@ import (
 	protocol "github.com/stellar/go-stellar-sdk/protocols/rpc"
 	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/xdr"
+
+	"github.com/withObsrvr/nebu/pkg/processor"
 )
 
 var version = "0.2.0"
@@ -69,6 +71,22 @@ func main() {
 	rootCmd.Flags().BoolVarP(&quietMode, "quiet", "q", false, "Suppress non-error output")
 	rootCmd.Flags().StringVar(&factoryContract, "factory", "", "Soroswap factory contract address (auto-detected from --network)")
 	rootCmd.Flags().UintVar(&pageLimit, "page-limit", 100, "Events per RPC page request")
+	rootCmd.Flags().Bool(describeFlagName, false, "Emit machine-readable describe envelope to stdout and exit")
+
+	// Short-circuit into the describe-json protocol before cobra
+	// validates required flags — --describe-json must work without
+	// --start-ledger or any other mandatory flag set.
+	emitDescribeIfRequested(rootCmd, func() processor.DescribeEnvelope {
+		return processor.DescribeEnvelope{
+			Name:        "soroswap-pool-indexer",
+			Type:        processor.TypeOrigin.String(),
+			Version:     version,
+			Description: "Index Soroswap pool creation events from the factory contract via getEvents RPC",
+			Schema: processor.DescribeSchema{
+				ID: "nebu.soroswap_pool.v1",
+			},
+		}
+	})
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

@@ -255,7 +255,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/stellar/go/xdr"
+	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/withObsrvr/nebu/examples/processors/contract-invocation/proto"
 	"github.com/withObsrvr/nebu/pkg/processor"
 )
@@ -273,26 +273,37 @@ func NewOrigin(networkPass string) *Origin {
 	}
 }
 
-// ProcessLedger extracts contract invocations from a ledger
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
-	// Extract invocations
-	invocations := o.extractInvocations(ledger)
+// ProcessLedger extracts contract invocations from a ledger.
+//
+// ProcessLedger is void — per-ledger errors are reported via the
+// Reporter attached to ctx (see processor.ReportWarning /
+// processor.ReportFatal), and context cancellation is the only signal
+// to stop. This is the "streams-never-throw" contract: one bad ledger
+// does not kill a pipeline running across millions of ledgers.
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
+	invocations, err := o.extractInvocations(ledger)
+	if err != nil {
+		// Report the failure but keep the pipeline alive.
+		processor.ReportWarning(ctx, o.Name(),
+			fmt.Errorf("ledger %d: extract invocations: %w", ledger.LedgerSequence(), err))
+		return
+	}
 
-	// Emit each invocation
+	// Emit each invocation.
 	for _, inv := range invocations {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		case o.out <- inv:
 			// Event emitted
 		}
 	}
-
-	return nil
 }
 
-// extractInvocations does the heavy lifting
-func (o *Origin) extractInvocations(ledger xdr.LedgerCloseMeta) []*proto.ContractInvocation {
+// extractInvocations does the heavy lifting. It returns an error
+// only for unrecoverable problems reading the ledger; per-event
+// issues should be logged and skipped inside the function.
+func (o *Origin) extractInvocations(ledger xdr.LedgerCloseMeta) ([]*proto.ContractInvocation, error) {
 	var invocations []*proto.ContractInvocation
 
 	// Get ledger metadata
@@ -335,7 +346,7 @@ func (o *Origin) extractInvocations(ledger xdr.LedgerCloseMeta) []*proto.Contrac
 		}
 	}
 
-	return invocations
+	return invocations, nil
 }
 
 // Helper functions for extraction
@@ -402,6 +413,10 @@ func main() {
 		Name:        "contract-invocation",
 		Description: "Extract contract invocations from Stellar ledgers",
 		Version:     version,
+		// SchemaID is the canonical schema identifier; surfaced in
+		// --describe-json output and in the _schema field of every
+		// emitted event. Bump the version suffix on breaking changes.
+		SchemaID: "nebu.contract_invocation.v1",
 	}
 
 	// RunProtoOriginCLI handles:
@@ -409,6 +424,8 @@ func main() {
 	// - Processing ledgers
 	// - Converting protos to JSON (protojson)
 	// - Writing to stdout
+	// - The --describe-json introspection protocol (auto-generated
+	//   JSON Schema derived from the *proto.ContractInvocation type)
 	cli.RunProtoOriginCLI(config, func(networkPass string) cli.ProtoOriginProcessor[*proto.ContractInvocation] {
 		return contract_invocation.NewOrigin(networkPass)
 	})
@@ -569,7 +586,7 @@ Stellar ledgers are encoded in XDR (External Data Representation). Your processo
 #### Pattern 1: Simple Field Mapping
 
 ```go
-import "github.com/stellar/go/xdr"
+import "github.com/stellar/go-stellar-sdk/xdr"
 
 // XDR operation → Proto message
 func convertOperation(xdrOp xdr.Operation) *proto.Operation {
@@ -627,7 +644,7 @@ func convertI128Amount(parts xdr.Int128Parts) string {
 #### Pattern 4: Address Conversion
 
 ```go
-import "github.com/stellar/go/strkey"
+import "github.com/stellar/go-stellar-sdk/strkey"
 
 // XDR AccountID → Proto string (Stellar address)
 func convertAccountID(xdrAccount xdr.AccountId) string {
@@ -758,40 +775,57 @@ func convertLedgerEntryChange(xdrChange xdr.LedgerEntryChange) *proto.LedgerEntr
 
 ## Common Patterns
 
-### Pattern: Graceful Error Handling
+### Pattern: Per-Ledger Error Reporting (Streams Never Throw)
+
+`ProcessLedger` does not return an error. Per-ledger failures are
+reported to the runtime via the reporter attached to the context,
+and the pipeline continues to the next ledger. Unrecoverable errors
+(e.g., the processor has lost a required resource) are reported via
+`ReportFatal`, after which the runtime halts the pipeline.
 
 ```go
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
-	// Extract events
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	events, err := o.extractEvents(ledger)
 	if err != nil {
-		// Log error but don't stop processing
-		fmt.Fprintf(os.Stderr, "Warning: failed to extract from ledger %d: %v\n",
-			ledger.LedgerSequence(), err)
-		return nil  // Continue to next ledger
+		// Warning = "skip this ledger, keep the pipeline running".
+		processor.ReportWarning(ctx, o.Name(),
+			fmt.Errorf("ledger %d: extract events: %w",
+				ledger.LedgerSequence(), err))
+		return
 	}
 
 	// Emit events...
-	return nil
+}
+```
+
+For fatal errors (database dropped, RPC credentials revoked, etc.):
+
+```go
+if err := o.db.Ping(); err != nil {
+	processor.ReportFatal(ctx, o.Name(),
+		fmt.Errorf("database unreachable: %w", err))
+	return // Runtime will halt the pipeline.
 }
 ```
 
 ### Pattern: Context Cancellation
 
 ```go
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
-	events := o.extractEvents(ledger)
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
+	events, err := o.extractEvents(ledger)
+	if err != nil {
+		processor.ReportWarning(ctx, o.Name(), err)
+		return
+	}
 
 	for _, event := range events {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()  // Graceful shutdown
+			return  // Graceful shutdown — runtime already knows.
 		case o.out <- event:
 			// Event sent
 		}
 	}
-
-	return nil
 }
 ```
 
@@ -845,6 +879,138 @@ processor-name/
 
 ---
 
+## Self-Description: The `--describe-json` Protocol
+
+Every nebu-compatible processor binary implements a `--describe-json`
+flag that prints a JSON envelope describing itself and exits 0, without
+running any processing. This is how `nebu describe <name>` fetches the
+authoritative picture of any processor, and how AI agents introspect a
+pipeline without reading source code.
+
+### What you get for free
+
+When you use `RunProtoOriginCLI`, `RunTransformCLI`, or `RunSinkCLI`,
+the protocol is **automatically wired** — you don't have to write any
+describe code. The helper:
+
+1. Registers the `--describe-json` flag on your cobra command.
+2. Scans `os.Args` for the flag **before** cobra validates required
+   flags, so `--describe-json` works even when other required flags
+   are missing. This matters: `postgres-sink --describe-json` must
+   work without `--dsn` being set.
+3. Walks your proto message descriptor via `pkg/processor/jsonschema`
+   to generate a JSON Schema Draft 2020-12 document from the emitted
+   event type.
+4. Enumerates all registered cobra flags and captures their name,
+   type, required-ness, description, and default.
+5. Emits the full envelope to stdout.
+
+### Example output
+
+```bash
+$ token-transfer --describe-json
+```
+
+```json
+{
+  "name":        "token-transfer",
+  "type":        "origin",
+  "version":     "0.3.0",
+  "description": "Stream token transfer events from Stellar ledgers",
+  "schema": {
+    "id":     "nebu.token_transfer.v1",
+    "output": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref":    "#/$defs/nebu.ttp.TokenTransferEvent",
+      "$defs":   { "nebu.ttp.TokenTransferEvent": { "..." } }
+    }
+  },
+  "flags": [
+    { "name": "start-ledger", "type": "uint32", "required": true,
+      "description": "Start ledger sequence", "default": "0" }
+  ],
+  "examples": []
+}
+```
+
+### How to make it rich
+
+Set `SchemaID` on your config to populate the `schema.id` field:
+
+```go
+config := cli.OriginConfig{
+    Name:        "my-processor",
+    Description: "...",
+    Version:     version,
+    SchemaID:    "nebu.my_processor.v1",
+}
+```
+
+For transforms and sinks that know their input/output proto types,
+set `InputType` and/or `OutputType` to embed real JSON Schemas in the
+envelope:
+
+```go
+config := cli.TransformConfig{
+    Name:        "my-filter",
+    Description: "...",
+    Version:     version,
+    SchemaID:    "nebu.token_transfer.v1",
+    InputType:   &ttpb.TokenTransferEvent{},
+    OutputType:  &ttpb.TokenTransferEvent{},
+}
+```
+
+Transforms/sinks that accept arbitrary JSON (like `dedup` or
+`json-file-sink`) should leave `InputType`/`OutputType` nil.
+
+### Testing your describe output
+
+Build your processor and pipe the envelope through `jq`:
+
+```bash
+# Is it valid JSON?
+./bin/my-processor --describe-json | jq -e . > /dev/null && echo OK
+
+# What does the envelope look like?
+./bin/my-processor --describe-json | jq '{name, type, schemaId: .schema.id}'
+
+# Extract just the JSON Schema
+./bin/my-processor --describe-json | jq '.schema.output'
+```
+
+The nebu CLI consumes this protocol directly:
+
+```bash
+# Pretty-print a merged view with registry metadata
+nebu describe my-processor
+
+# Raw envelope
+nebu describe my-processor --json
+
+# Just the JSON Schema (for piping into validators)
+nebu describe my-processor --schema
+```
+
+### Invariants the protocol guarantees
+
+- `--describe-json` succeeds with exit code 0 without any other flags.
+- The output is valid JSON; nothing else goes to stdout.
+- The envelope is forward-compatible: parsers must ignore unknown
+  fields so nebu can add new optional fields in minor releases.
+- See [nebu's STABILITY.md](https://github.com/withObsrvr/nebu/blob/main/docs/STABILITY.md)
+  for the full protocol specification.
+
+### Non-Go processors
+
+If you're authoring a processor in Rust, Python, or another language,
+you implement the protocol yourself: parse `os.Args` for
+`--describe-json` before any other flag handling, build a JSON object
+matching the envelope shape above, print it to stdout, and exit 0.
+That's the entire contract.
+
+---
+
 ## Best Practices
 
 ### 1. Schema Design
@@ -877,15 +1043,26 @@ processor-name/
 ### 3. Error Handling
 
 **✓ Do:**
-- Log warnings to stderr
-- Continue processing on non-fatal errors
-- Return errors for critical failures
-- Respect context cancellation
+- Report per-event errors via `processor.ReportWarning(ctx, name, err)`
+- Report unrecoverable errors via `processor.ReportFatal(ctx, name, err)` and return
+- Respect context cancellation — just return, don't propagate `ctx.Err()`
+- Include the ledger sequence or tx hash in the wrapped error for traceability
 
 **✗ Don't:**
+- Return errors from `ProcessLedger` — the method is void
 - Write logs to stdout (breaks JSON)
-- Silently skip errors
-- Panic on unexpected data
+- Silently swallow errors without reporting them
+- Panic on unexpected data inside `ProcessLedger` / origin / transform logic
+- Call `os.Exit` from inside `ProcessLedger` / origin / transform logic — use `processor.ReportFatal(ctx, name, err)` and return instead
+
+> **Sinks are the exception.** `RunSinkCLI` intentionally does not
+> plumb a `Reporter` into the `SinkFunc` signature, so sinks cannot
+> call `processor.ReportFatal`. For truly unrecoverable sink
+> conditions (dropped DB connection that can't be re-established,
+> revoked credentials), a sink may call `os.Exit` or `panic` directly
+> — that is the supported fatal path for sinks today. See
+> `skills/nebu-processor-builder/templates/sink-template.go` for the
+> pattern.
 
 ### 4. Performance
 

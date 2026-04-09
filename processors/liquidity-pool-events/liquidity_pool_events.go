@@ -32,8 +32,10 @@ func (o *Origin) Type() processor.Type                    { return processor.Typ
 func (o *Origin) Out() <-chan *LiquidityPoolEvent         { return o.out }
 func (o *Origin) Close()                                  { close(o.out) }
 
-// ProcessLedger extracts LP operations from the ledger.
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+// ProcessLedger extracts LP operations from the ledger. Per-ledger
+// errors are reported via processor.ReportWarning; the pipeline
+// continues (streams-never-throw).
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	sequence := ledger.LedgerSequence()
 	closeTime := int64(ledger.LedgerHeaderHistoryEntry().Header.ScpValue.CloseTime)
 
@@ -41,7 +43,9 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 	txSuccessMap := make(map[string]bool)
 	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
 	if err != nil {
-		return fmt.Errorf("error creating transaction reader: %w", err)
+		processor.ReportWarning(ctx, o.Name(),
+			fmt.Errorf("ledger %d: create tx reader: %w", sequence, err))
+		return
 	}
 	defer reader.Close()
 
@@ -51,7 +55,9 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 			if err == io.EOF {
 				break
 			}
-			return err
+			processor.ReportWarning(ctx, o.Name(),
+				fmt.Errorf("ledger %d: read tx (success map): %w", sequence, err))
+			return
 		}
 		txSuccessMap[tx.Result.TransactionHash.HexString()] = tx.Result.Successful()
 	}
@@ -59,7 +65,9 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 	// Re-create reader to process operations
 	reader, err = ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
 	if err != nil {
-		return err
+		processor.ReportWarning(ctx, o.Name(),
+			fmt.Errorf("ledger %d: re-create tx reader: %w", sequence, err))
+		return
 	}
 	defer reader.Close()
 
@@ -69,7 +77,9 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 			if err == io.EOF {
 				break
 			}
-			return err
+			processor.ReportWarning(ctx, o.Name(),
+				fmt.Errorf("ledger %d: read tx: %w", sequence, err))
+			return
 		}
 
 		txHash := tx.Result.TransactionHash.HexString()
@@ -89,7 +99,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 			if event != nil {
 				select {
 				case <-ctx.Done():
-					return ctx.Err()
+					return
 				case o.out <- event:
 				}
 			}
@@ -100,13 +110,11 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 		for _, event := range events {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return
 			case o.out <- event:
 			}
 		}
 	}
-
-	return nil
 }
 
 func (o *Origin) processDeposit(

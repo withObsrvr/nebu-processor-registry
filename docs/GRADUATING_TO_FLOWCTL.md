@@ -165,12 +165,15 @@ type Origin struct {
 }
 
 // 3. Core extraction logic (KEEP THIS)
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
     events := o.extractEvents(ledger)  // Your extraction logic
     for _, event := range events {
-        o.out <- event
+        select {
+        case <-ctx.Done():
+            return
+        case o.out <- event:
+        }
     }
-    return nil
 }
 
 // 4. CLI wrapper (REPLACE THIS)
@@ -186,17 +189,16 @@ func main() {
 Extract your processing logic into a reusable function that matches the flowctl-sdk pattern:
 
 ```go
-// Before: Nebu Origin processor
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+// Before: Nebu Origin processor (streams-never-throw)
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
     events := o.extractEvents(ledger)
     for _, event := range events {
         select {
         case <-ctx.Done():
-            return ctx.Err()
+            return
         case o.out <- event:
         }
     }
-    return nil
 }
 
 // After: Flowctl-compatible function
@@ -215,7 +217,7 @@ package main
 
 import (
     "github.com/withObsrvr/flowctl-sdk/pkg/stellar"
-    "github.com/stellar/go/xdr"
+    "github.com/stellar/go-stellar-sdk/xdr"
     proto "your-processor/proto"
 )
 
@@ -280,7 +282,8 @@ package main
 import (
     "context"
 
-    "github.com/stellar/go/xdr"
+    "github.com/stellar/go-stellar-sdk/xdr"
+    "github.com/withObsrvr/nebu/pkg/processor"
     "github.com/withObsrvr/nebu/pkg/processor/cli"
     proto "token-transfer/proto"
 )
@@ -299,21 +302,23 @@ func NewOrigin(networkPass string) *Origin {
     }
 }
 
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+// ProcessLedger is void — streams-never-throw. Per-ledger errors
+// are reported via processor.ReportWarning and the pipeline continues.
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
     events := extractTokenEvents(o.networkPass, ledger)
     for _, event := range events {
         select {
         case <-ctx.Done():
-            return ctx.Err()
+            return
         case o.out <- event:
         }
     }
-    return nil
 }
 
 func (o *Origin) Out() <-chan *proto.TokenEvent { return o.out }
 func (o *Origin) Close()                         { close(o.out) }
 func (o *Origin) Name() string                   { return "token-transfer" }
+func (o *Origin) Type() processor.Type           { return processor.TypeOrigin }
 
 // extractTokenEvents contains your core business logic
 func extractTokenEvents(networkPass string, ledger xdr.LedgerCloseMeta) []*proto.TokenEvent {
@@ -326,6 +331,7 @@ func main() {
         Name:        "token-transfer",
         Description: "Extract token transfer events",
         Version:     version,
+        SchemaID:    "nebu.token_transfer.v1",
     }
 
     cli.RunProtoOriginCLI(config, func(networkPass string) cli.ProtoOriginProcessor[*proto.TokenEvent] {
@@ -341,7 +347,7 @@ func main() {
 package main
 
 import (
-    "github.com/stellar/go/xdr"
+    "github.com/stellar/go-stellar-sdk/xdr"
     "github.com/withObsrvr/flowctl-sdk/pkg/stellar"
     "google.golang.org/protobuf/proto"
 

@@ -12,6 +12,7 @@ func main() {
 		Name:        "account-effects",
 		Description: "Extract account-level effects from Stellar ledgers",
 		Version:     version,
+		SchemaID:    "nebu.account_effects.v1",
 	}
 
 	cli.RunProtoOriginCLI(config, func(networkPass string) cli.ProtoOriginProcessor[*account_effects.AccountEffect] {

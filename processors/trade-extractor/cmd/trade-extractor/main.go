@@ -25,7 +25,8 @@ import (
 	"github.com/stellar/go-stellar-sdk/network"
 	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/xdr"
-	"github.com/withObsrvr/nebu/pkg/source"
+	"github.com/withObsrvr/nebu/pkg/processor"
+	"github.com/withObsrvr/nebu/pkg/source/rpc"
 )
 
 var version = "0.1.0"
@@ -53,6 +54,22 @@ func main() {
 	rootCmd.Flags().Uint32Var(&endLedger, "end-ledger", 0, "End ledger sequence (0 for unbounded)")
 	rootCmd.Flags().StringVar(&networkPass, "network", network.PublicNetworkPassphrase, "Network passphrase or shorthand (mainnet|testnet)")
 	rootCmd.Flags().BoolVarP(&quietMode, "quiet", "q", false, "Suppress non-error output")
+	rootCmd.Flags().Bool(describeFlagName, false, "Emit machine-readable describe envelope to stdout and exit")
+
+	// Short-circuit into the describe-json protocol before cobra
+	// validates required flags — --describe-json must work without
+	// --start-ledger or any other mandatory flag set.
+	emitDescribeIfRequested(rootCmd, func() processor.DescribeEnvelope {
+		return processor.DescribeEnvelope{
+			Name:        "trade-extractor",
+			Type:        processor.TypeOrigin.String(),
+			Version:     version,
+			Description: "Extract classic DEX trades from Stellar ledgers",
+			Schema: processor.DescribeSchema{
+				ID: "nebu.trade_extractor.v1",
+			},
+		}
+	})
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -82,12 +99,12 @@ func run() error {
 		os.Exit(1)
 	}()
 
-	var src *source.RPCLedgerSource
+	var src *rpc.LedgerSource
 	var err error
 	if authHeader := os.Getenv("NEBU_RPC_AUTH"); authHeader != "" {
-		src, err = source.NewRPCLedgerSourceWithHeaders(rpcURL, map[string]string{"Authorization": authHeader})
+		src, err = rpc.NewLedgerSourceWithHeaders(rpcURL, map[string]string{"Authorization": authHeader})
 	} else {
-		src, err = source.NewRPCLedgerSource(rpcURL)
+		src, err = rpc.NewLedgerSource(rpcURL)
 	}
 	if err != nil {
 		return fmt.Errorf("failed to create RPC source: %w", err)

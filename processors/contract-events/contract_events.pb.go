@@ -1064,7 +1064,7 @@ const file_contract_events_proto_rawDesc = "" +
 	"\n" +
 	"\x06SYSTEM\x10\x01\x12\x0e\n" +
 	"\n" +
-	"DIAGNOSTIC\x10\x02B@Z>github.com/withObsrvr/nebu-processor-registry/processors/contract-eventsb\x06proto3"
+	"DIAGNOSTIC\x10\x02B@Z>github.com/withObsrvr/nebu/examples/processors/contract-eventsb\x06proto3"
 
 var (
 	file_contract_events_proto_rawDescOnce sync.Once

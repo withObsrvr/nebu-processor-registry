@@ -45,14 +45,18 @@ func (o *Origin) Close() {
 	close(o.out)
 }
 
-// ProcessLedger implements processor.Origin.
-func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) error {
+// ProcessLedger implements processor.Origin. Per-ledger errors are
+// reported via processor.ReportWarning; the pipeline continues to
+// the next ledger (streams-never-throw).
+func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	sequence := ledger.LedgerSequence()
 	closeTime := int64(ledger.LedgerHeaderHistoryEntry().Header.ScpValue.CloseTime)
 
 	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
 	if err != nil {
-		return fmt.Errorf("error creating transaction reader: %w", err)
+		processor.ReportWarning(ctx, o.Name(),
+			fmt.Errorf("ledger %d: create tx reader: %w", sequence, err))
+		return
 	}
 	defer reader.Close()
 
@@ -65,7 +69,9 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 			if err == io.EOF {
 				break
 			}
-			return fmt.Errorf("error reading transaction: %w", err)
+			processor.ReportWarning(ctx, o.Name(),
+				fmt.Errorf("ledger %d: read tx: %w", sequence, err))
+			return
 		}
 
 		txHash := tx.Result.TransactionHash.HexString()
@@ -93,12 +99,10 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 	for _, event := range seen {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		case o.out <- event:
 		}
 	}
-
-	return nil
 }
 
 func (o *Origin) processTtlChange(

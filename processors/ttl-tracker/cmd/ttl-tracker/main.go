@@ -12,6 +12,7 @@ func main() {
 		Name:        "ttl-tracker",
 		Description: "Extract TTL changes from Stellar ledgers",
 		Version:     version,
+		SchemaID:    "nebu.ttl_tracker.v1",
 	}
 
 	cli.RunProtoOriginCLI(config, func(networkPass string) cli.ProtoOriginProcessor[*ttl_tracker.TtlEvent] {

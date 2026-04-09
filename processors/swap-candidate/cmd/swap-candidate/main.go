@@ -23,6 +23,8 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+
+	"github.com/withObsrvr/nebu/pkg/processor"
 )
 
 var version = "0.1.0"
@@ -68,6 +70,22 @@ func main() {
 
 	rootCmd.Flags().IntVar(&minTransfers, "min-transfers", 2, "Minimum transfers per tx to consider as swap candidate")
 	rootCmd.Flags().BoolVarP(&quietMode, "quiet", "q", false, "Suppress non-error output")
+	rootCmd.Flags().Bool(describeFlagName, false, "Emit machine-readable describe envelope to stdout and exit")
+
+	// Short-circuit into the describe-json protocol before cobra
+	// validates arguments — --describe-json must work without any
+	// other flags set.
+	emitDescribeIfRequested(rootCmd, func() processor.DescribeEnvelope {
+		return processor.DescribeEnvelope{
+			Name:        "swap-candidate",
+			Type:        processor.TypeTransform.String(),
+			Version:     version,
+			Description: "Detect swap patterns in token transfer events",
+			Schema: processor.DescribeSchema{
+				ID: "nebu.swap_candidate.v1",
+			},
+		}
+	})
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
