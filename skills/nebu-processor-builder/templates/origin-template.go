@@ -10,7 +10,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -88,7 +90,15 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 	for {
 		tx, err := reader.Read()
 		if err != nil {
-			break // End of transactions.
+			if errors.Is(err, io.EOF) {
+				break // Clean end of transactions.
+			}
+			// Non-EOF read failures are real errors (corrupt XDR,
+			// partial reads). Surface them via ReportWarning with
+			// the ledger sequence so they aren't silently swallowed.
+			processor.ReportWarning(ctx, o.Name(),
+				fmt.Errorf("ledger %d: read tx: %w", ledger.LedgerSequence(), err))
+			return
 		}
 
 		// TODO: extract your domain events from tx and populate pb.YourEvent.

@@ -1052,8 +1052,17 @@ That's the entire contract.
 - Return errors from `ProcessLedger` — the method is void
 - Write logs to stdout (breaks JSON)
 - Silently swallow errors without reporting them
-- Panic on unexpected data
-- Call `os.Exit` from within a processor; report fatal instead
+- Panic on unexpected data inside `ProcessLedger` / origin / transform logic
+- Call `os.Exit` from inside `ProcessLedger` / origin / transform logic — use `processor.ReportFatal(ctx, name, err)` and return instead
+
+> **Sinks are the exception.** `RunSinkCLI` intentionally does not
+> plumb a `Reporter` into the `SinkFunc` signature, so sinks cannot
+> call `processor.ReportFatal`. For truly unrecoverable sink
+> conditions (dropped DB connection that can't be re-established,
+> revoked credentials), a sink may call `os.Exit` or `panic` directly
+> — that is the supported fatal path for sinks today. See
+> `skills/nebu-processor-builder/templates/sink-template.go` for the
+> pattern.
 
 ### 4. Performance
 

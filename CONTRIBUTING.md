@@ -72,7 +72,7 @@ my-processor/
 - ✅ Reads JSON from stdin
 - ✅ Uses `RunSinkCLI` wrapper
 - ✅ Per-event write failures returned from `SinkFunc` are logged as warnings by the helper and the loop continues
-- ✅ Truly fatal conditions (dropped DB connection, revoked credentials) should be handled explicitly by the sink — call `processor.ReportFatal` or `os.Exit` as appropriate
+- ✅ Truly fatal conditions (dropped DB connection, revoked credentials) should be handled explicitly by the sink — call `os.Exit` or `panic` with a clear message. `processor.ReportFatal` is *not* reachable from a `SinkFunc` because `RunSinkCLI` does not plumb a reporter into its signature.
 
 ### 2. Create description.yml
 
