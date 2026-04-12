@@ -9,12 +9,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/withObsrvr/nebu/pkg/runtime"
-	"github.com/withObsrvr/nebu/pkg/source"
+	"github.com/withObsrvr/nebu/pkg/source/rpc"
 )
 
 func TestOrigin_ProcessLedger(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
 	// Integration test - processes real ledgers from RPC
-	src, err := source.NewRPCLedgerSource("https://archive-rpc.lightsail.network")
+	src, err := rpc.NewLedgerSource("https://archive-rpc.lightsail.network")
 	require.NoError(t, err)
 	defer src.Close()
 

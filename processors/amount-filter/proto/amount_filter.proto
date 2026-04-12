@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package nebu.amount_filter;
 
-option go_package = "github.com/withObsrvr/nebu/examples/processors/amount-filter/proto;amount_filter_pb";
+option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/amount-filter/proto;amount_filter_pb";
 
 // TransformRequest contains a single event to transform
 message TransformRequest {
