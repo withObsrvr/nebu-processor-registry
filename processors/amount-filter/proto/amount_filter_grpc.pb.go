@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.0
 // - protoc             v6.32.1
-// source: examples/processors/amount-filter/proto/amount_filter.proto
+// source: proto/amount_filter.proto
 
 package amount_filter_pb
 
@@ -238,5 +238,5 @@ var AmountFilterService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "examples/processors/amount-filter/proto/amount_filter.proto",
+	Metadata: "proto/amount_filter.proto",
 }
