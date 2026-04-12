@@ -146,8 +146,9 @@ docs:
       json-file-sink --out usdc-history.jsonl
 
     # Analyze with DuckDB
-    duckdb -c "SELECT DATE(meta.timestamp) as day, SUM(transfer.amount) as volume
+    duckdb -c "SELECT DATE(to_timestamp(CAST(json_extract_string(meta, '$.closedAtUnix') AS BIGINT))) as day, SUM(CAST(json_extract_string(transfer, '$.amount') AS DOUBLE)) as volume
                 FROM read_json_auto('usdc-history.jsonl')
+                WHERE transfer IS NOT NULL
                 GROUP BY day ORDER BY day"
     ```
 
@@ -158,8 +159,8 @@ docs:
       json-file-sink --out events.jsonl
 
     # Analyze multiple ways
-    cat events.jsonl | jq 'select(.transfer.amount > 10000000)'
-    cat events.jsonl | jq '.meta.contractAddress' | sort | uniq -c
+    cat events.jsonl | jq 'select(.transfer != null and (.transfer.amount | tonumber) > 10000000)'
+    cat events.jsonl | jq -r '.meta.contractAddress // empty' | sort | uniq -c
     ```
 
     **Limitations:**

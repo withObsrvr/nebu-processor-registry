@@ -29,7 +29,7 @@ docs:
     # With partition key (events for same asset go to same partition)
     token-transfer --start-ledger 60200000 --follow | \
       kafka-sink --brokers kafka:9092 --topic transfers \
-        --key transfer.asset.issuedAsset.assetCode
+        --key transfer.assetCode
 
     # USDC transfers to dedicated topic
     token-transfer --start-ledger 60200000 --follow | \
@@ -94,7 +94,7 @@ docs:
     key are guaranteed to go to the same partition, preserving ordering:
 
     - `--key meta.txHash` — Group by transaction
-    - `--key transfer.asset.issuedAsset.assetCode` — Group by asset
+    - `--key transfer.assetCode` — Group by asset
     - `--key contractId` — Group by contract
 
     Without `--key`, Kafka distributes events round-robin across partitions.

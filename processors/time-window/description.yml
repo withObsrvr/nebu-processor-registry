@@ -39,7 +39,7 @@ docs:
     # Custom time range (Unix timestamps)
     contract-events --start-ledger 60200000 --end-ledger 60300000 | \
       time-window --start 1704067200 --end 1704153600 | \
-      postgres-sink --table jan_2024_events
+      postgres-sink --dsn "$DSN" --table jan_2024_events
 
     # Recent contract activity (last 30 minutes)
     contract-invocation --start-ledger 60200000 --follow | \
@@ -49,39 +49,25 @@ docs:
   extended_description: |
     # Time Window Transform Processor
 
-    Filters events based on time ranges using ledger timestamps. Supports
-    relative time windows (`--last 1h`) and absolute Unix timestamp ranges.
+    Filters events based on time ranges using actual ledger close timestamps
+    from `meta.closedAtUnix`. Supports relative time windows (`--last 1h`) and
+    absolute Unix timestamp ranges.
 
     ---
 
-    ## Ledger-to-Time Conversion
+    ## Timestamp Source
 
-    Stellar ledgers close approximately every 5 seconds. This processor uses
-    the `meta.timestamp` field (ISO 8601) or estimates time from ledger sequence.
-
-    | Duration  | Approximate Ledgers | Calculation   |
-    |-----------|---------------------|---------------|
-    | 1 minute  | ~12 ledgers         | 60s ÷ 5s      |
-    | 5 minutes | ~60 ledgers         | 300s ÷ 5s     |
-    | 1 hour    | ~720 ledgers        | 3600s ÷ 5s    |
-    | 6 hours   | ~4,320 ledgers      | 21600s ÷ 5s   |
-    | 24 hours  | ~17,280 ledgers     | 86400s ÷ 5s   |
-    | 7 days    | ~120,960 ledgers    | 604800s ÷ 5s  |
-    | 30 days   | ~518,400 ledgers    | 2592000s ÷ 5s |
-
-    ---
-
-    ## Time Accuracy
+    This processor uses `meta.closedAtUnix`, which origin processors emit from
+    the real Stellar ledger close time.
 
     | Aspect | Value |
     |--------|-------|
-    | Precision | ±5 seconds (one ledger interval) |
-    | Source | `meta.timestamp` field (ISO 8601) |
-    | Fallback | Ledger sequence × 5 seconds from genesis |
-    | Genesis | July 1, 2015 00:00:00 UTC (Stellar mainnet) |
+    | Precision | Ledger-close exactness carried by the origin event |
+    | Source | `meta.closedAtUnix` |
+    | Calculation | None — uses emitted timestamp directly |
+    | Units | Unix seconds (UTC) |
 
-    **Note:** Actual ledger close times vary slightly (4-6 seconds), so time
-    estimates have ±5 second accuracy. For most analytics, this is sufficient.
+    **Note:** Events without `meta.closedAtUnix` are filtered out.
 
     ---
 
@@ -175,7 +161,7 @@ docs:
     # Jan 7, 2024 23:59:59 UTC = 1704671999
     contract-events --start-ledger 60200000 --end-ledger 60500000 | \
       time-window --start 1704067200 --end 1704671999 | \
-      postgres-sink --table jan_week1_events
+      postgres-sink --dsn "$DSN" --table jan_week1_events
     ```
 
     **4. Sliding window aggregation:**
@@ -228,8 +214,7 @@ docs:
 
     ## Limitations
 
-    - Requires `meta.timestamp` or `meta.ledgerSequence` field
-    - Time estimates have ±5 second accuracy
+    - Requires `meta.closedAtUnix` field
     - Cannot handle timezone-specific ranges (uses UTC)
     - `--last` is relative to current time at startup
 

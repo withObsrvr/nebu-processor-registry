@@ -27,8 +27,8 @@ nebu-processor-registry/
     └── workflows/
         └── validate-pr.yml      # Automated PR validation
 
-# Generated files (not in git)
-PROCESSORS.md                    # Auto-generated processor list
+# Generated file
+PROCESSORS.md                    # Auto-generated processor list (commit regenerated updates)
 ```
 
 ## Automation
@@ -149,7 +149,7 @@ cat PROCESSORS.md
 2. Check automated validation passed
 3. Optionally test processor manually
 4. Merge PR
-5. GitHub Actions regenerates `PROCESSORS.md`
+5. Regenerate and commit `PROCESSORS.md`
 
 ## Processor Requirements
 

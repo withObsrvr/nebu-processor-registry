@@ -146,7 +146,7 @@ docs:
     ```sql
     SELECT
       id,
-      data->>'meta'->>'ledgerSequence' as ledger,
+      data->'meta'->>'ledgerSequence' as ledger,
       data->'transfer'->>'amount' as amount
     FROM events
     WHERE event_type = 'transfer';

@@ -38,7 +38,7 @@ docs:
       swap-candidate -q | \
       soroswap-detector -q --network testnet | \
       swap-normalizer -q | \
-      postgres-sink --table dex_swaps
+      postgres-sink --dsn "$DSN" --table dex_swaps
 
     # Filter for Soroswap swaps only
     token-transfer -q --start-ledger 60200000 | \

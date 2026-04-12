@@ -29,7 +29,7 @@ docs:
     # Hourly summaries grouped by asset code
     token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
       aggregator --window 1h --sum-field transfer.amount \
-        --group-by transfer.asset.issuedAsset.assetCode | jq
+        --group-by transfer.assetCode | jq
 
     # USDC volume per minute
     token-transfer --start-ledger 60200000 --follow | \
@@ -45,7 +45,7 @@ docs:
     # Dashboard-ready metrics to PostgreSQL
     token-transfer --start-ledger 60200000 --follow | \
       aggregator --window 1h --sum-field transfer.amount \
-        --group-by transfer.asset.issuedAsset.assetCode | \
+        --group-by transfer.assetCode | \
       postgres-sink --dsn "$DSN" --table transfer_metrics
 
   extended_description: |

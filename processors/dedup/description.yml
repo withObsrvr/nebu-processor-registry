@@ -25,7 +25,7 @@ docs:
     token-transfer --start-ledger 60200000 --follow | \
       usdc-filter | \
       dedup --key meta.txHash | \
-      postgres-sink --table usdc_transfers
+      postgres-sink --dsn "$DSN" --table usdc_transfers
 
     # Deduplicate contract events by composite key
     contract-events --start-ledger 60200000 | \
@@ -153,7 +153,7 @@ docs:
     ```bash
     token-transfer --start-ledger 60200000 --follow | \
       dedup --key meta.txHash | \
-      postgres-sink --table transfers --conflict ignore
+      postgres-sink --dsn "$DSN" --table transfers --conflict ignore
     ```
 
     **2. Unique USDC senders:**
@@ -181,7 +181,7 @@ docs:
         token-transfer --start-ledger $(cat last-ledger.txt) --follow | \
           dedup --key meta.txHash | \
           tee >(jq -r ".meta.ledgerSequence" | tail -1 > last-ledger.txt) | \
-          postgres-sink --table transfers
+          postgres-sink --dsn "$DSN" --table transfers
       '
     done
     ```

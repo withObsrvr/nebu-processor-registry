@@ -162,7 +162,7 @@ module github.com/withObsrvr/nebu/examples/processors/{name}
 go 1.25.4
 
 require (
-    github.com/withObsrvr/nebu v0.6.1
+    github.com/withObsrvr/nebu v0.6.5
 )
 
 // Add type-specific dependencies:
