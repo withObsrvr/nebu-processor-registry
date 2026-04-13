@@ -216,13 +216,16 @@ Writes events to external systems.
 
 ## Troubleshooting
 
-### "Not in nebu repository"
-- Ensure you're in `/home/tillman/Documents/nebu` (or your nebu repo path)
-- Check with `pwd`
+### "Not in a supported repository"
+- Ensure you're inside a local clone of either `withObsrvr/nebu` (for official
+  processors) or `withObsrvr/nebu-processor-registry` (for community processors)
+- Check with `pwd` — the repo root's basename should be `nebu` or
+  `nebu-processor-registry`
 
 ### "Processor name already exists"
 - Choose a different name
-- Check `examples/processors/` directory
+- Check both `examples/processors/` in the nebu repo and `processors/` in the
+  registry repo — name collisions across targets are confusing
 
 ### Build fails with "ambiguous import"
 - This is expected in go.work mode during development
