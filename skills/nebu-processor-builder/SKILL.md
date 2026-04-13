@@ -27,9 +27,17 @@ This skill ensures new processors follow current best practices and compile imme
 
 ## Prerequisites
 
-- Must be in the nebu repository (`/home/tillman/Documents/nebu`)
+- Must be in a local clone of one of these repositories:
+  - `withObsrvr/nebu` (typically named `nebu/`) — for **official** processors
+  - `withObsrvr/nebu-processor-registry` (typically named `nebu-processor-registry/`) — for **community** processors
 - Go 1.25+ installed
 - Familiarity with Nebu processor types
+
+Throughout this skill:
+- `{NEBU_REPO}` refers to the local path of the `withObsrvr/nebu` clone.
+- `{REGISTRY_REPO}` refers to the local path of the `withObsrvr/nebu-processor-registry` clone.
+
+Detect both by matching the basename of `pwd` (or its ancestors) against `nebu` and `nebu-processor-registry` respectively.
 
 ## Workflow
 
@@ -64,35 +72,60 @@ Rules:
 - 3-50 characters
 ```
 
-**Q4: Create registry entry?**
+**Q4: Where should this processor live?**
+```
+Where should this processor live?
+  - official: examples/processors/ in the nebu core repo
+              (maintained by the OBSRVR team, shipped with nebu)
+  - community: processors/ in the nebu-processor-registry repo
+               (community-contributed, discovered via `nebu list`)
+
+Your choice:
+```
+
+The target is inferred from the current working directory if unambiguous:
+- `pwd` ends in `/nebu` → **official** (default, confirm with user)
+- `pwd` ends in `/nebu-processor-registry` → **community** (default, confirm with user)
+- Otherwise: ask explicitly.
+
+**Q5: Create registry entry?**
 ```
 Should I create a registry entry in nebu-processor-registry? (y/n)
 
 Registry entries help others discover and use your processor.
 ```
 
+For **community** processors this is always "yes" and happens automatically —
+the registry entry IS the processor's home. Skip this question when target is community.
+
 ### Step 2: Validate Inputs
 
 Before generating anything, verify:
 
-1. **Check current directory:**
+1. **Check current directory matches target:**
    ```bash
+   # For target=official:
    pwd | grep -q "/nebu$" || error "Not in nebu repository"
+   # For target=community:
+   pwd | grep -q "/nebu-processor-registry$" || error "Not in nebu-processor-registry repository"
    ```
 
 2. **Check processor name:**
    - Matches pattern: `^[a-z][a-z0-9-]*[a-z0-9]$`
-   - Not already in `examples/processors/`
+   - Not already present at the target location:
+     - official → `examples/processors/{name}` must not exist
+     - community → `processors/{name}` must not exist
    - Length 3-50 characters
 
 3. **Confirm with user:**
    Show summary and ask for confirmation:
    ```
    Ready to generate:
-   - Type: {type}
-   - Name: {name}
+   - Target:  {official|community}
+   - Type:    {type}
+   - Name:    {name}
    - Description: {description}
-   - Registry entry: {yes/no}
+   - Registry entry: {yes/no}  (always yes for community)
 
    Proceed? (y/n)
    ```
@@ -117,17 +150,26 @@ Before generating code, read the appropriate instruction file:
 
 ### Step 4: Generate Directory Structure
 
-Create the processor directory:
+Create the processor directory. Path depends on target:
 
 ```bash
+# Target: official (run from {NEBU_REPO})
 mkdir -p examples/processors/{name}/cmd/{name}
+
+# Target: community (run from {REGISTRY_REPO})
+mkdir -p processors/{name}/cmd/{name}
 ```
 
-Files to create:
-1. `examples/processors/{name}/cmd/{name}/main.go`
-2. `examples/processors/{name}/go.mod`
-3. `examples/processors/{name}/processor.go` (for complex processors)
-4. `examples/processors/{name}/README.md`
+For the rest of this skill, `{PROC_DIR}` refers to the processor's root directory:
+- official: `examples/processors/{name}`
+- community: `processors/{name}`
+
+Files to create inside `{PROC_DIR}`:
+1. `cmd/{name}/main.go`
+2. `go.mod`
+3. `processor.go` (for complex processors)
+4. `README.md`
+5. `description.yml` (community only — this is where it lives)
 
 ### Step 5: Generate main.go
 
@@ -156,8 +198,20 @@ Every config struct (`OriginConfig`, `TransformConfig`, `SinkConfig`) supports a
 
 **Critical: NO replace directives!**
 
+Module path depends on target:
+
 ```go
+// Target: official
 module github.com/withObsrvr/nebu/examples/processors/{name}
+
+// Target: community
+module github.com/withObsrvr/nebu-processor-registry/processors/{name}
+```
+
+Full template:
+
+```go
+module {MODULE_PATH}
 
 go 1.25.4
 
@@ -217,9 +271,12 @@ nebu install {name}
 MIT
 ```
 
-### Step 8: Update go.work
+### Step 8: Update go.work (official only)
 
-If `/home/tillman/Documents/nebu/go.work` exists:
+**Community processors:** skip this step. The nebu-processor-registry repo does
+not use a Go workspace; each processor is an independent module.
+
+**Official processors:** if `{NEBU_REPO}/go.work` exists:
 - Add new processor module to `use` block
 - Keep alphabetically sorted
 
@@ -233,11 +290,25 @@ use (
 )
 ```
 
-### Step 9: Generate Registry Entry (if requested)
+### Step 9: Generate Registry Entry
 
-If user said yes to registry entry:
+**Community processors:** `description.yml` lives inside the processor's own
+directory (`processors/{name}/description.yml`) and is always created. The
+`repo.github` field points at the registry repo itself, since the code lives there.
 
-Create `/home/tillman/Documents/nebu-processor-registry/processors/{name}/description.yml`:
+**Official processors:** a registry entry is **optional** (only if user said yes
+to Q5). When requested, it's created at
+`{REGISTRY_REPO}/processors/{name}/description.yml` and `repo.github` points at
+the nebu core repo.
+
+Path + `repo.github` by target:
+
+| Target | description.yml path | repo.github |
+|--------|----------------------|-------------|
+| official | `{REGISTRY_REPO}/processors/{name}/description.yml` | `withObsrvr/nebu` |
+| community | `{PROC_DIR}/description.yml` (inside the registry) | `withObsrvr/nebu-processor-registry` |
+
+Template:
 
 ```yaml
 processor:
@@ -251,8 +322,13 @@ processor:
     - withObsrvr
 
 repo:
-  github: withObsrvr/nebu
+  github: {REPO_GITHUB}   # per table above
   ref: main
+
+# Optional: schema identifier for --describe-json envelope
+schema:
+  version: v1
+  identifier: nebu.{snake_case_name}.v1
 
 docs:
   quick_start: |
@@ -271,26 +347,30 @@ docs:
 
 ### Step 10: Summarize & Guide Next Steps
 
-Tell the user:
+Adjust paths in the summary based on target:
 
 ```
-✓ Created examples/processors/{name}/
+✓ Created {PROC_DIR}/
   ├── cmd/{name}/main.go ({using CLI helper})
-  ├── go.mod (module: github.com/withObsrvr/nebu/examples/processors/{name})
+  ├── go.mod (module: {MODULE_PATH})
   ├── README.md (usage examples included)
-  └── {other files}
+  └── {description.yml for community; other files as generated}
 
-{if go.work updated}
+{if official + go.work updated}
 ✓ Updated go.work (added {name} module)
 
-{if registry entry}
+{if official + registry entry requested}
 ✓ Created nebu-processor-registry/processors/{name}/description.yml
+
+{if community}
+✓ Registry entry is in-place at {PROC_DIR}/description.yml
 
 Next steps:
 1. Implement business logic (see TODOs in main.go around line X)
-2. Test build: cd examples/processors/{name} && go build ./cmd/{name}
-3. Test run: {type-specific test command}
-4. Reference: See examples/processors/{reference} for similar patterns
+2. Test build: cd {PROC_DIR} && go build ./cmd/{name}
+3. Smoke-test --describe-json: ./cmd/{name}/{name} --describe-json | jq
+4. Test run: {type-specific test command}
+5. Reference: See {reference processor path} for similar patterns
 
 The processor will:
 - {Bullet list of what it does based on user's description}
@@ -298,21 +378,29 @@ The processor will:
 Ready to implement! Let me know if you need help with the logic.
 ```
 
+Where:
+- `{PROC_DIR}` = `examples/processors/{name}` (official) or `processors/{name}` (community)
+- `{MODULE_PATH}` = `github.com/withObsrvr/nebu/examples/processors/{name}` (official) or `github.com/withObsrvr/nebu-processor-registry/processors/{name}` (community)
+
 ## Error Handling
 
 ### Processor name already exists
 ```
-✗ Processor '{name}' already exists in examples/processors/
+✗ Processor '{name}' already exists at {PROC_DIR}
 Please choose a different name.
 ```
 
-### Not in nebu repository
-```
-✗ Not in nebu repository.
-Current directory: {pwd}
-Expected: /home/tillman/Documents/nebu
+(Check both `examples/processors/{name}` in nebu core and `processors/{name}` in the registry — name collisions across targets are confusing for users.)
 
-Please cd to the nebu repository and try again.
+### Not in a supported repository
+```
+✗ Not in a supported repository.
+Current directory: {pwd}
+Expected to be inside a local clone of one of:
+  - withObsrvr/nebu                  (for official processors)
+  - withObsrvr/nebu-processor-registry (for community processors)
+
+Please cd to the appropriate repository and try again.
 ```
 
 ### Invalid processor name
