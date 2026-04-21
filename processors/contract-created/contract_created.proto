@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package contract_created;
+
+option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/contract-created;contract_created";
+
+message EventMeta {
+  uint32 ledger_sequence = 1;
+  int64 closed_at_unix = 2;
+  string tx_hash = 3;
+  uint32 transaction_index = 4;
+  int32 operation_index = 5;
+  bool in_successful_tx = 6;
+}
+
+message StateEntry {
+  string key = 1;
+  string value = 2;
+  string operation = 3;
+  string durability = 4;
+}
+
+message FamilyCandidate {
+  string family = 1;
+  double confidence = 2;
+  repeated string reasons = 3;
+  repeated string tags = 4;
+  repeated string rule_ids = 5;
+}
+
+message ContractCreatedEvent {
+  EventMeta meta = 1;
+
+  string contract_id = 2;
+  string deployer = 3;
+  string preimage_address = 4;
+  string salt_hex = 5;
+
+  string executable_type = 6;
+  string wasm_hash = 7;
+  string create_host_function_type = 8;
+
+  bool constructor_invoked = 9;
+  string constructor_name = 10;
+  repeated string constructor_args = 11;
+
+  bool contract_instance_created = 12;
+  repeated StateEntry initialized_state = 13;
+  uint32 ttl_extended_to_ledger = 14;
+
+  string classification_hint = 15;
+  repeated string classification_reasons = 16;
+
+  string family_hint = 17;
+  double family_confidence = 18;
+  repeated string family_reasons = 19;
+  repeated string family_tags = 20;
+  repeated FamilyCandidate family_candidates = 21;
+}

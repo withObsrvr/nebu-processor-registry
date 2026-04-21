@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package nft_events;
+
+option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/nft-events;nft_events";
+
+message EventMeta {
+  uint32 ledger_sequence = 1;
+  int64 closed_at_unix = 2;
+  string tx_hash = 3;
+  uint32 transaction_index = 4;
+  int32 operation_index = 5;
+  int32 event_index = 6;
+  bool in_successful_tx = 7;
+}
+
+message NftEvent {
+  EventMeta meta = 1;
+
+  string contract_id = 2;
+  string token_id = 3;
+  string action = 4;
+
+  string standard = 5;
+  string implementation = 6;
+  string classification_source = 7;
+  double confidence = 8;
+
+  string from = 9;
+  string to = 10;
+  string owner = 11;
+  string approved = 12;
+  string operator = 13;
+
+  string function_name = 14;
+  string token_metadata_uri = 15;
+  string metadata_storage = 16;
+
+  repeated string methods_detected = 17;
+  repeated string event_types_detected = 18;
+  repeated string raw_topics = 19;
+  string raw_data = 20;
+  string source_kind = 21;
+
+  string collection_name = 22;
+  string symbol = 23;
+  string state_key = 24;
+  string state_value = 25;
+  string durability = 26;
+  bool token_exists = 27;
+  bool burned = 28;
+
+  repeated string heuristic_rule_ids = 29;
+  repeated string heuristic_reasons = 30;
+  repeated string heuristic_tags = 31;
+}

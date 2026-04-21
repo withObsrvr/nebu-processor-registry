@@ -1,0 +1,48 @@
+processor:
+  name: contract-created
+  type: origin
+  description: Extract contract creation events from Stellar ledgers
+  version: 0.1.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+proto:
+  source: github.com/withObsrvr/nebu-processor-registry/processors/contract-created
+  package: contract_created
+
+schema:
+  version: v1
+  identifier: nebu.contract_created.v1
+  documentation: https://github.com/withObsrvr/nebu-processor-registry/blob/main/processors/contract-created/README.md
+
+docs:
+  quick_start: |
+    nebu install contract-created
+
+    contract-created --start-ledger 60200000 --end-ledger 60200100
+
+  examples: |
+    contract-created --start-ledger 60200000 --end-ledger 60200100 | jq
+
+    contract-created --start-ledger 60200000 --end-ledger 60200100 | \
+      jq 'select(.classificationHint == "nft_like")'
+
+  extended_description: |
+    contract-created is an origin processor that detects Soroban contract creation
+    by inspecting InvokeHostFunction operations for create-contract host functions
+    and then confirming the resulting ledger changes.
+
+    It emits one normalized event per detected contract creation with:
+    - contract id
+    - deployer / preimage address
+    - executable type and wasm hash
+    - constructor args when available
+    - initialized contract state
+    - TTL extension summary
+    - lightweight classification hints such as nft_like
