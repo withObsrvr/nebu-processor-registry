@@ -86,7 +86,7 @@ nebu fetch 60200000 60200100 | contract-created
   "saltHex": "...",
   "executableType": "wasm",
   "wasmHash": "706bb37ef21dd159a479f9ef251db714648ed93b1624656128650415787836ec",
-  "createHostFunctionType": "HostFunctionTypeHostFunctionTypeCreateContractV2",
+  "createHostFunctionType": "create_contract_v2",
   "constructorInvoked": true,
   "constructorName": "__constructor",
   "constructorArgs": [

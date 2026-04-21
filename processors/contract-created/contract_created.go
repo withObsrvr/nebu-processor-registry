@@ -70,7 +70,11 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 
 		txHash := tx.Result.TransactionHash.HexString()
 		txIndex := uint32(tx.Index)
-		changes, _ := tx.GetChanges()
+		changes, err := tx.GetChanges()
+		if err != nil {
+			processor.ReportWarning(ctx, o.Name(), fmt.Errorf("ledger %d tx %s: get changes: %w", ledgerSeq, txHash, err))
+			continue
+		}
 
 		for opIndex, op := range tx.Envelope.Operations() {
 			if op.Body.Type != xdr.OperationTypeInvokeHostFunction {
@@ -169,7 +173,7 @@ func (o *Origin) buildContractCreatedEvent(
 		ExecutableType:          createDetails.ExecutableType,
 		WasmHash:                createDetails.WasmHash,
 		CreateHostFunctionType:  createDetails.HostFunctionType,
-		ConstructorInvoked:      len(createDetails.ConstructorArgs) > 0,
+		ConstructorInvoked:      createDetails.ConstructorInvoked,
 		ConstructorName:         createDetails.ConstructorName,
 		ConstructorArgs:         createDetails.ConstructorArgs,
 		ContractInstanceCreated: contractInstanceCreated,
@@ -186,14 +190,15 @@ func (o *Origin) buildContractCreatedEvent(
 }
 
 type createContractDetails struct {
-	ContractID       string
-	PreimageAddress  string
-	SaltHex          string
-	ExecutableType   string
-	WasmHash         string
-	HostFunctionType string
-	ConstructorName  string
-	ConstructorArgs  []string
+	ContractID         string
+	PreimageAddress    string
+	SaltHex            string
+	ExecutableType     string
+	WasmHash           string
+	HostFunctionType   string
+	ConstructorInvoked bool
+	ConstructorName    string
+	ConstructorArgs    []string
 }
 
 func extractCreateDetails(passphrase string, tx ingest.LedgerTransaction, invoke xdr.InvokeHostFunctionOp) (createContractDetails, bool) {
@@ -213,6 +218,7 @@ func extractCreateDetails(passphrase string, tx ingest.LedgerTransaction, invoke
 		details.ContractID = deriveContractID(passphrase, args.ContractIdPreimage)
 		details.PreimageAddress, details.SaltHex = preimageAddressAndSalt(args.ContractIdPreimage)
 		details.ExecutableType, details.WasmHash = executableDetails(args.Executable)
+		details.ConstructorInvoked = true
 		for _, arg := range args.ConstructorArgs {
 			details.ConstructorArgs = append(details.ConstructorArgs, scValToString(arg))
 		}
@@ -226,12 +232,13 @@ func extractCreateDetails(passphrase string, tx ingest.LedgerTransaction, invoke
 		}
 	}
 	if details.ConstructorName == "__constructor" && len(details.ConstructorArgs) == 0 {
-		if name, args := extractConstructorFromAuth(invoke.Auth, details.ContractID); len(args) > 0 {
+		if name, args, ok := extractConstructorFromAuth(invoke.Auth, details.ContractID); ok {
+			details.ConstructorInvoked = true
 			details.ConstructorName = name
 			details.ConstructorArgs = args
 		}
 	}
-	if len(details.ConstructorArgs) == 0 {
+	if !details.ConstructorInvoked {
 		details.ConstructorName = ""
 	}
 	return details, true
@@ -430,13 +437,13 @@ func expandInstanceStorageState(instance xdr.ScContractInstance, operation, dura
 	return entries
 }
 
-func extractConstructorFromAuth(auth []xdr.SorobanAuthorizationEntry, contractID string) (string, []string) {
+func extractConstructorFromAuth(auth []xdr.SorobanAuthorizationEntry, contractID string) (string, []string, bool) {
 	for _, entry := range auth {
 		if name, args, ok := findConstructorInvocation(entry.RootInvocation, contractID); ok {
-			return name, args
+			return name, args, true
 		}
 	}
-	return "", nil
+	return "", nil, false
 }
 
 func findConstructorInvocation(inv xdr.SorobanAuthorizedInvocation, contractID string) (string, []string, bool) {

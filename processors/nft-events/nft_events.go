@@ -303,7 +303,16 @@ func (o *Origin) buildFromInvocation(
 	fromAddr, toAddr := firstTwoAddresses(rawArgs)
 	tokenID := extractTokenID(rawArgs, "")
 	uri, storage := extractMetadataURI(rawArgs...)
-	candidate := Candidate{Kind: CandidateKindInvocation, ContractID: contractID, ActionHint: actionForMethod(method), MethodName: method, RawTopics: rawArgs, TokenID: tokenID, From: fromAddr, To: toAddr, Owner: fromAddr, Approved: toAddr, Operator: toAddr, MetadataURI: uri, MetadataStore: storage}
+	action := actionForMethod(method)
+	candidate := Candidate{Kind: CandidateKindInvocation, ContractID: contractID, ActionHint: action, MethodName: method, RawTopics: rawArgs, TokenID: tokenID, From: fromAddr, To: toAddr, MetadataURI: uri, MetadataStore: storage}
+	if action == "approve" {
+		candidate.Owner = fromAddr
+		candidate.Approved = toAddr
+	}
+	if action == "approve_for_all" {
+		candidate.Owner = fromAddr
+		candidate.Operator = toAddr
+	}
 	classification := o.engine.Classify(candidate)
 	classification = o.applyContractProfile(candidate, classification)
 	if classification.Confidence < minimumConfidence(candidate.Kind) {
@@ -323,16 +332,16 @@ func (o *Origin) buildFromInvocation(
 		},
 		ContractId:           contractID,
 		TokenId:              tokenID,
-		Action:               actionForMethod(method),
+		Action:               action,
 		Standard:             classification.Standard,
 		Implementation:       classification.Implementation,
 		ClassificationSource: classification.Source,
 		Confidence:           classification.Confidence,
 		From:                 fromAddr,
 		To:                   toAddr,
-		Owner:                fromAddr,
-		Approved:             toAddr,
-		Operator:             toAddr,
+		Owner:                candidate.Owner,
+		Approved:             candidate.Approved,
+		Operator:             candidate.Operator,
 		FunctionName:         method,
 		MethodsDetected:      []string{method},
 		RawTopics:            rawArgs,
@@ -392,8 +401,6 @@ func (o *Origin) buildFromContractDataChange(
 		stateValue = scValToString(cd.Val)
 		actionHint = "delete"
 		durability = durabilityString(cd.Durability)
-		tokenExists = false
-		burned = true
 	default:
 		return nil
 	}
@@ -474,9 +481,14 @@ func (o *Origin) buildFromContractDataChange(
 	}
 	if action == "approve_for_all" {
 		ev.Operator = approved
+		ev.Approved = ""
 	}
 	if action == "owner_update" {
 		ev.Owner = owner
+	}
+	if action == "burn" {
+		ev.TokenExists = false
+		ev.Burned = true
 	}
 
 	return ev
@@ -612,65 +624,6 @@ func detectActionFromTopics(topics []xdr.ScVal) string {
 	return ""
 }
 
-func classifyNft(trigger string, values []string) (standard, implementation, source string, confidence float64) {
-	lower := strings.ToLower(trigger)
-	joined := strings.ToLower(strings.Join(values, " "))
-	if strings.Contains(joined, "openzeppelin") || strings.Contains(joined, "non_fungible") || strings.Contains(joined, "non-fungible") {
-		return "custom_nft", "openzeppelin", "heuristic", 0.82
-	}
-	if lower == "approve_for_all" {
-		return "sep_50", "unknown", "event_shape", 0.94
-	}
-	if strings.Contains(joined, "owner_of") || strings.Contains(joined, "token_uri") {
-		return "sep_50", "unknown", "event_shape", 0.90
-	}
-	if lower == "transfer" || lower == "mint" || lower == "burn" || lower == "approve" {
-		return "custom_nft", "unknown", "event_shape", 0.64
-	}
-	return "unknown", "unknown", "heuristic", 0.25
-}
-
-func classifyInvocation(method string, values []string) (standard, implementation, source string, confidence float64) {
-	lower := strings.ToLower(method)
-	joined := strings.ToLower(strings.Join(values, " "))
-	if strings.Contains(joined, "openzeppelin") {
-		return "custom_nft", "openzeppelin", "invocation_shape", 0.84
-	}
-	if _, ok := sep50MethodNames[lower]; ok {
-		if lower == "approve_for_all" || lower == "owner_of" || lower == "token_uri" || lower == "token_uri_of" {
-			return "sep_50", "unknown", "invocation_shape", 0.97
-		}
-		return "sep_50", "unknown", "invocation_shape", 0.88
-	}
-	if _, ok := nftMethodNames[lower]; ok {
-		return "custom_nft", "unknown", "invocation_shape", 0.72
-	}
-	return "unknown", "unknown", "heuristic", 0.25
-}
-
-func classifyState(action string, keyParts, valueParts []string) (standard, implementation, source string, confidence float64) {
-	joined := strings.ToLower(strings.Join(append(append([]string{}, keyParts...), valueParts...), " "))
-	if strings.Contains(joined, "openzeppelin") {
-		return "custom_nft", "openzeppelin", "state_shape", 0.82
-	}
-	if action == "collection_metadata" && (containsAny(joined, "name", "symbol") || containsAny(joined, "token_uri", "uri", "metadata")) {
-		return "sep_50", "unknown", "state_shape", 0.78
-	}
-	if action == "approve_for_all" {
-		return "sep_50", "unknown", "state_shape", 0.90
-	}
-	if action == "owner_update" || action == "metadata_update" {
-		return "custom_nft", "unknown", "state_shape", 0.68
-	}
-	if action == "approve" {
-		return "custom_nft", "unknown", "state_shape", 0.66
-	}
-	if action == "burn" {
-		return "custom_nft", "unknown", "state_shape", 0.62
-	}
-	return "unknown", "unknown", "heuristic", 0.25
-}
-
 func containsAny(s string, needles ...string) bool {
 	for _, n := range needles {
 		if strings.Contains(s, n) {
@@ -731,7 +684,7 @@ func extractMetadataURI(values ...string) (string, string) {
 		case strings.HasPrefix(lv, "https://"):
 			return v, "https"
 		case strings.HasPrefix(lv, "http://"):
-			return v, "https"
+			return v, "http"
 		case strings.HasPrefix(lv, "ar://"):
 			return v, "arweave"
 		}

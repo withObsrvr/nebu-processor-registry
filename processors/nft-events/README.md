@@ -108,7 +108,7 @@ nft-events --start-ledger 60200000 --end-ledger 60200100 | \
   "action": "transfer",
   "standard": "sep_50",
   "implementation": "unknown",
-  "classificationSource": "method_or_event_shape",
+  "classificationSource": "heuristic_framework",
   "confidence": 0.9,
   "from": "GA...",
   "to": "GB...",
