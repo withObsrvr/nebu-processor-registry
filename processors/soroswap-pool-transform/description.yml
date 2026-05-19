@@ -1,0 +1,74 @@
+processor:
+  name: soroswap-pool-transform
+  type: transform
+  description: Transform contract-events JSONL into normalized Soroswap pool discovery records
+  version: 1.0.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+schema:
+  version: v1
+  identifier: nebu.soroswap_pool_discovery.v1
+
+metadata:
+  category: stellar
+  tags:
+    - stellar
+    - soroban
+    - soroswap
+    - dex
+    - pool-discovery
+    - transform
+  input: contract-events JSONL
+  output: nebu.soroswap_pool_discovery.v1
+
+docs:
+  quick_start: |
+    nebu install soroswap-pool-transform
+
+    nebu fetch --network pubnet --mode archive --start-ledger 50000000 --end-ledger 51000000 \
+      | contract-events \
+      | soroswap-pool-transform --network pubnet \
+      > soroswap_pools.jsonl
+
+  examples: |
+    # Explicit factory allowlist
+    nebu fetch --network testnet --mode archive --start-ledger 2606500 --end-ledger 2606600 \
+      | contract-events \
+      | soroswap-pool-transform --network testnet \
+          --factory CDP3HMUH6SMS3S7NPGNDJLULCOXXEPSHY4JKUKMBNQMATHDHWXRRJTBY
+
+    # Compact output without raw evidence
+    contract-events < ledgers.xdr \
+      | soroswap-pool-transform --network pubnet --omit-raw
+
+    # Validate standard nebu describe metadata
+    soroswap-pool-transform --describe-json
+
+  extended_description: |
+    # Soroswap Pool Transform
+
+    Reads newline-delimited JSON emitted by `contract-events`, filters Soroswap
+    factory pool-creation events, and emits one `nebu.soroswap_pool.v1` record
+    per discovered pool. This processor is transform-only: it does not call
+    Soroban RPC, does not use `getEvents`, and does not own ledger traversal.
+
+    It is intended for deterministic historical backfills with archive ledgers:
+
+    ```bash
+    nebu fetch --network pubnet --mode archive --start-ledger 50000000 --end-ledger 51000000 \
+      | contract-events \
+      | soroswap-pool-transform --network pubnet \
+      > soroswap_pools.jsonl
+    ```
+
+    The logical schema is proto-first JSONL: the transport is newline JSON for
+    Nebu composability, and records include the registry-standard `_schema` and
+    `_nebu_version` fields. Domain field names and semantics are intended to map
+    cleanly to a future flow-proto pool-discovery message.

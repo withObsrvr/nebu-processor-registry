@@ -104,6 +104,8 @@ Index Soroswap pool creation events from the factory contract via getEvents RPC
 - **Schema**: `nebu.soroswap_pool.v1`
 - **Repository**: [github.com/withObsrvr/nebu-processor-registry](https://github.com/withObsrvr/nebu-processor-registry)
 
+RPC-driven discovery (origin). For deterministic historical backfills from archive ledgers without Soroban RPC, see `soroswap-pool-transform` (different schema: `nebu.soroswap_pool_discovery.v1`).
+
 ```bash
 # Install
 nebu install soroswap-pool-indexer
@@ -320,6 +322,29 @@ nebu install soroswap-detector
 
 # Use in pipeline
 token-transfer | soroswap-detector | json-file-sink
+```
+
+### soroswap-pool-transform
+
+Transform contract-events JSONL into normalized Soroswap pool discovery records
+
+- **Version**: 1.0.0
+- **Language**: Go
+- **License**: MIT
+- **Schema**: `nebu.soroswap_pool_discovery.v1`
+- **Repository**: [github.com/withObsrvr/nebu-processor-registry](https://github.com/withObsrvr/nebu-processor-registry)
+
+Transform-only (no RPC). For live RPC-driven discovery from the factory contract, see `soroswap-pool-indexer` (different schema: `nebu.soroswap_pool.v1`).
+
+```bash
+# Install
+nebu install soroswap-pool-transform
+
+# Historical archive backfill; no Soroban RPC getEvents queries
+nebu fetch --network pubnet --mode archive --start-ledger 50000000 --end-ledger 51000000 \
+  | contract-events \
+  | soroswap-pool-transform --network pubnet \
+  > soroswap_pools.jsonl
 ```
 
 ### swap-candidate
