@@ -72,6 +72,27 @@ func TestArrayAndTopicMixedDecode(t *testing.T) {
 	}
 }
 
+func TestSCValMapEntriesDecodeByKey(t *testing.T) {
+	actualPool := "CAZX7T2DVTYZF4GK5LORA7QY35VTLIAJQSONITRL6ZX7ORQAKQVH53HQ"
+	actualToken0 := "CAKUTOTMQRMXOQ4GPGJPQCELL4Z6GOMOGWKUPXYRWYBAPGPY3QZAGO4R"
+	actualToken1 := "CBB2L2DONT2GO6QU4TCKQKDZBNPQV4UJIC4MMHG2NQEMBHAU6KLUDDWX"
+	input := `{"contract_id":"` + factory + `","type":"contract","event_type":"new_pair","dataDecoded":{"mapValue":{"entries":[{"key":{"symbolValue":"pair"},"val":{"addressValue":"` + actualPool + `"}},{"key":{"symbolValue":"token_0"},"val":{"addressValue":"` + actualToken0 + `"}},{"key":{"symbolValue":"token_1"},"val":{"addressValue":"` + actualToken1 + `"}}]}}}` + "\n"
+	out, _, st, err := runTransform(t, input, config{Factories: []string{factory}, EventNames: defaultEventNames, IncludeRaw: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Emitted != 1 {
+		t.Fatalf("emitted = %d", st.Emitted)
+	}
+	var rec map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec["pool_contract_id"] != actualPool || rec["token_a_contract_id"] != actualToken0 || rec["token_b_contract_id"] != actualToken1 {
+		t.Fatalf("rotated or incorrect fields: %#v", rec)
+	}
+}
+
 func TestNetworkPassphraseAlias(t *testing.T) {
 	input := `{"network_passphrase":"Test SDF Network ; September 2015","contract_id":"` + factory + `","type":"contract","event_type":"pair_created","data_decoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}` + "\n"
 	out, _, st, err := runTransform(t, input, config{Factories: []string{factory}, EventNames: defaultEventNames, IncludeRaw: false})
