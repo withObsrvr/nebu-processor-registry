@@ -35,7 +35,7 @@ func TestDecodedObjectEvent(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &rec); err != nil {
 		t.Fatal(err)
 	}
-	if rec["schema"] != schemaID || rec["pool_contract_id"] != pool || rec["token_a_contract_id"] != tokenB || rec["token_b_contract_id"] != tokenA {
+	if rec["_schema"] != schemaID || rec["_nebu_version"] != version || rec["pool_contract_id"] != pool || rec["token_a_contract_id"] != tokenB || rec["token_b_contract_id"] != tokenA {
 		t.Fatalf("unexpected record: %#v", rec)
 	}
 	wantKey := tokenA + ":" + tokenB
@@ -66,6 +66,22 @@ func TestArrayAndTopicMixedDecode(t *testing.T) {
 	}
 	if rec["transaction_hash"] != "abc" {
 		t.Fatalf("transaction hash alias not used: %#v", rec)
+	}
+}
+
+func TestNetworkPassphraseAlias(t *testing.T) {
+	input := `{"network_passphrase":"Test SDF Network ; September 2015","contract_id":"` + factory + `","type":"contract","event_type":"pair_created","data_decoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}` + "\n"
+	out, _, st, err := runTransform(t, input, config{Factories: []string{factory}, EventNames: defaultEventNames, IncludeRaw: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Emitted != 1 {
+		t.Fatalf("emitted = %d", st.Emitted)
+	}
+	var rec map[string]any
+	_ = json.Unmarshal([]byte(strings.TrimSpace(out)), &rec)
+	if rec["network"] != "testnet" {
+		t.Fatalf("network = %v", rec["network"])
 	}
 }
 

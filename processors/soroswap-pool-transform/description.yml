@@ -48,7 +48,7 @@ docs:
     contract-events < ledgers.xdr \
       | soroswap-pool-transform --network pubnet --omit-raw
 
-    # Validate schema metadata
+    # Validate standard nebu describe metadata
     soroswap-pool-transform --describe-json
 
   extended_description: |
@@ -69,5 +69,6 @@ docs:
     ```
 
     The logical schema is proto-first JSONL: the transport is newline JSON for
-    Nebu composability, but field names and semantics are intended to map cleanly
-    to a future flow-proto pool-discovery message.
+    Nebu composability, and records include the registry-standard `_schema` and
+    `_nebu_version` fields. Domain field names and semantics are intended to map
+    cleanly to a future flow-proto pool-discovery message.

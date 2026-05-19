@@ -43,7 +43,8 @@ FROM nebu('soroswap-pool-transform', '--network', 'testnet');
 
 ```json
 {
-  "schema": "nebu.soroswap_pool.v1",
+  "_schema": "nebu.soroswap_pool.v1",
+  "_nebu_version": "1.0.0",
   "network": "testnet",
   "protocol": "soroswap",
   "factory_contract_id": "CDP3...JTBY",
@@ -74,11 +75,12 @@ FROM nebu('soroswap-pool-transform', '--network', 'testnet');
 - `--strict`: fail on malformed JSON or undecodable matching factory events.
 - `--stats`: print read/match/emit/error counts to stderr.
 - `--verbose`: print per-row diagnostics to stderr.
-- `--describe-json`: print schema/registry description JSON.
+- `-q`, `--quiet`: suppress non-error diagnostics.
+- `--describe-json`: print the standard nebu describe envelope.
 
 ## Proto-first contract
 
-This processor uses JSONL for Unix/Nebu composability, but the output is shaped as the JSON projection of a future typed pool-discovery message. It intentionally separates pool discovery (`nebu.soroswap_pool.v1`) from pool operation events such as deposits, withdrawals, and swaps.
+This processor uses JSONL for Unix/Nebu composability, but the output is shaped as the JSON projection of a future typed pool-discovery message. Registry metadata uses `_schema` and `_nebu_version` for compatibility with other nebu processors. It intentionally separates pool discovery (`nebu.soroswap_pool.v1`) from pool operation events such as deposits, withdrawals, and swaps.
 
 ## Development
 

@@ -14,7 +14,10 @@ import (
 	"time"
 )
 
-const schemaID = "nebu.soroswap_pool.v1"
+const (
+	schemaID = "nebu.soroswap_pool.v1"
+	version  = "1.0.0"
+)
 
 var contractIDRE = regexp.MustCompile(`^C[A-Z2-7]{55}$`)
 
@@ -45,6 +48,7 @@ type config struct {
 	Strict       bool
 	StatsEnabled bool
 	Verbose      bool
+	Quiet        bool
 }
 
 type stats struct {
@@ -58,7 +62,8 @@ type stats struct {
 }
 
 type poolRecord struct {
-	Schema            string         `json:"schema"`
+	Schema            string         `json:"_schema"`
+	NebuVersion       string         `json:"_nebu_version"`
 	Network           string         `json:"network,omitempty"`
 	Protocol          string         `json:"protocol"`
 	FactoryContractID string         `json:"factory_contract_id"`
@@ -116,9 +121,14 @@ func parseFlags(args []string) (config, bool, error) {
 	fs.BoolVar(&cfg.Strict, "strict", false, "exit non-zero on malformed JSON or undecodable matching events")
 	fs.BoolVar(&cfg.StatsEnabled, "stats", false, "print summary counts to stderr")
 	fs.BoolVar(&cfg.Verbose, "verbose", false, "print per-error diagnostics to stderr")
+	fs.BoolVar(&cfg.Quiet, "quiet", false, "suppress non-error diagnostics")
+	fs.BoolVar(&cfg.Quiet, "q", false, "suppress non-error diagnostics")
 	describe := fs.Bool("describe-json", false, "print registry/schema description JSON and exit")
 	if err := fs.Parse(args); err != nil {
 		return cfg, false, err
+	}
+	if *describe {
+		return cfg, true, nil
 	}
 	if *omitRaw {
 		cfg.IncludeRaw = false
@@ -194,12 +204,12 @@ func process(r io.Reader, w io.Writer, errw io.Writer, cfg config) (stats, error
 			}
 			continue
 		}
-		network := normalizeNetwork(firstString(row, "network"))
+		network := normalizeNetwork(firstString(row, "network", "network_passphrase"))
 		if network == "" {
 			network = cfg.Network
 		}
 		rec := poolRecord{
-			Schema: schemaID, Network: network, Protocol: "soroswap",
+			Schema: schemaID, NebuVersion: version, Network: network, Protocol: "soroswap",
 			FactoryContractID: sourceContract, PoolContractID: pool.Pool,
 			TokenAContractID: pool.TokenA, TokenBContractID: pool.TokenB,
 			TokenPairKey:   pairKey(pool.TokenA, pool.TokenB),
@@ -390,8 +400,12 @@ func normKey(s string) string {
 func normalizeNetwork(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	switch s {
-	case "mainnet", "public", "public global stellar network ; september 2015":
+	case "mainnet", "public", "pubnet", "public global stellar network ; september 2015":
 		return "pubnet"
+	case "test", "testnet", "test sdf network ; september 2015":
+		return "testnet"
+	case "future", "futurenet", "test sdf future network ; october 2022":
+		return "futurenet"
 	}
 	return s
 }
@@ -431,12 +445,49 @@ func ledgerClosedAt(m map[string]any) string {
 	return ""
 }
 
+type describeEnvelope struct {
+	Name        string           `json:"name"`
+	Type        string           `json:"type"`
+	Version     string           `json:"version"`
+	Description string           `json:"description"`
+	Schema      describeSchema   `json:"schema"`
+	Flags       []describeFlag   `json:"flags"`
+	Examples    []map[string]any `json:"examples"`
+}
+
+type describeSchema struct {
+	ID string `json:"id"`
+}
+
+type describeFlag struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Required    bool   `json:"required"`
+	Description string `json:"description"`
+	Default     string `json:"default"`
+}
+
 func printDescribe() {
-	desc := map[string]any{
-		"name": "soroswap-pool-transform", "type": "transform", "schema": schemaID,
-		"input": "nebu.contract-events.v1 JSONL", "output": schemaID,
-		"description": "Transform contract-events JSONL into normalized Soroswap pool discovery records without querying RPC.",
-		"fields":      []string{"schema", "network", "protocol", "factory_contract_id", "pool_contract_id", "token_a_contract_id", "token_b_contract_id", "token_pair_key", "ledger_sequence", "ledger_closed_at", "transaction_hash", "operation_index", "event_index", "factory_event_name", "source_contract_id", "discovery_method", "raw_event"},
+	desc := describeEnvelope{
+		Name:        "soroswap-pool-transform",
+		Type:        "transform",
+		Version:     version,
+		Description: "Transform contract-events JSONL into normalized Soroswap pool discovery records without querying RPC.",
+		Schema:      describeSchema{ID: schemaID},
+		Flags: []describeFlag{
+			{Name: "network", Type: "string", Description: "network name (pubnet, mainnet, testnet, futurenet, sandbox)", Default: ""},
+			{Name: "factory", Type: "stringArray", Description: "Soroswap factory contract ID allowlist (repeatable)", Default: ""},
+			{Name: "event-name", Type: "stringArray", Description: "accepted pool creation event symbol (repeatable)", Default: strings.Join(defaultEventNames, ",")},
+			{Name: "include-raw", Type: "bool", Description: "include full raw event evidence", Default: "true"},
+			{Name: "omit-raw", Type: "bool", Description: "omit raw_event from output", Default: "false"},
+			{Name: "strict", Type: "bool", Description: "exit non-zero on malformed JSON or undecodable matching events", Default: "false"},
+			{Name: "stats", Type: "bool", Description: "print summary counts to stderr", Default: "false"},
+			{Name: "verbose", Type: "bool", Description: "print per-error diagnostics to stderr", Default: "false"},
+			{Name: "quiet", Type: "bool", Description: "suppress non-error diagnostics", Default: "false"},
+		},
+		Examples: []map[string]any{
+			{"description": "Historical archive backfill", "command": "nebu fetch --network pubnet --mode archive --start-ledger 50000000 --end-ledger 51000000 | contract-events | soroswap-pool-transform --network pubnet"},
+		},
 	}
 	b, _ := json.MarshalIndent(desc, "", "  ")
 	fmt.Println(string(b))
