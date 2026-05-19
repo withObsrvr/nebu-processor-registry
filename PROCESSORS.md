@@ -104,6 +104,8 @@ Index Soroswap pool creation events from the factory contract via getEvents RPC
 - **Schema**: `nebu.soroswap_pool.v1`
 - **Repository**: [github.com/withObsrvr/nebu-processor-registry](https://github.com/withObsrvr/nebu-processor-registry)
 
+Produces the same `nebu.soroswap_pool.v1` schema as `soroswap-pool-transform`; use this RPC-driven origin for live tail/recent discovery and the transform for deterministic archive backfills.
+
 ```bash
 # Install
 nebu install soroswap-pool-indexer
@@ -331,6 +333,8 @@ Transform contract-events JSONL into normalized Soroswap pool discovery records
 - **License**: MIT
 - **Schema**: `nebu.soroswap_pool.v1`
 - **Repository**: [github.com/withObsrvr/nebu-processor-registry](https://github.com/withObsrvr/nebu-processor-registry)
+
+Produces the same `nebu.soroswap_pool.v1` schema as `soroswap-pool-indexer`; use this transform for deterministic archive backfills (no Soroban RPC) and the indexer for live discovery.
 
 ```bash
 # Install

@@ -60,22 +60,22 @@ FROM nebu('soroswap-pool-transform', '--network', 'testnet');
   "factory_event_name": "pair_created",
   "source_contract_id": "CDP3...JTBY",
   "discovery_method": "contract-events",
-  "raw_event": {}
+  "raw_event": { "type": "contract", "contract_id": "CDP3...JTBY", "event_type": "pair_created", "topic_decoded": ["pair_created"], "data_decoded": { "token_a": "CB3T...OV2F", "token_b": "CDLZ...CYSC", "pair": "CDVA...FKDB" } }
 }
 ```
 
-`raw_event` is included by default for audit/replay evidence. Use `--omit-raw` for smaller output.
+`raw_event` is included by default for audit/replay evidence. Use `--omit-raw` to drop it entirely from output.
 
 ## Flags
 
-- `--network <pubnet|mainnet|testnet|futurenet|sandbox>`: used when input rows omit `network`; also selects known factory defaults.
-- `--factory <contract_id>`: repeatable factory allowlist.
+- `--network <pubnet|testnet>`: used when input rows omit `network`; also selects known factory defaults.
+- `--factory <contract_id>`: repeatable factory allowlist. Required if `--network` is omitted or has no known factory.
 - `--event-name <symbol>`: repeatable accepted pool creation event names. Defaults: `new_pair`, `pair_created`, `create_pair`.
-- `--omit-raw`: omit the original event from output.
+- `--include-raw` / `--omit-raw`: include or omit the original event in output (`--include-raw` is the default; `--omit-raw` overrides it).
 - `--strict`: fail on malformed JSON or undecodable matching factory events.
 - `--stats`: print read/match/emit/error counts to stderr.
-- `--verbose`: print per-row diagnostics to stderr.
-- `-q`, `--quiet`: suppress non-error diagnostics.
+- `--verbose`: print per-error diagnostics to stderr (parse errors, decode errors).
+- `-q`, `--quiet`: suppress all non-error stderr output (overrides `--verbose` and `--stats`).
 - `--describe-json`: print the standard nebu describe envelope.
 
 ## Proto-first contract

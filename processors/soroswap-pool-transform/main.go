@@ -8,10 +8,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
+
+	"github.com/withObsrvr/nebu/pkg/processor"
 )
 
 const (
@@ -22,7 +26,6 @@ const (
 var contractIDRE = regexp.MustCompile(`^C[A-Z2-7]{55}$`)
 
 var knownFactories = map[string][]string{
-	"mainnet": {"CA4HEQTL2WPEUYKYKCDOHCDNIV4QHNJ7EL4J4NQ6VADP7SYHVRYZ7AW2"},
 	"pubnet":  {"CA4HEQTL2WPEUYKYKCDOHCDNIV4QHNJ7EL4J4NQ6VADP7SYHVRYZ7AW2"},
 	"testnet": {"CDP3HMUH6SMS3S7NPGNDJLULCOXXEPSHY4JKUKMBNQMATHDHWXRRJTBY"},
 }
@@ -56,6 +59,7 @@ type stats struct {
 	ParseError       int
 	MatchedFactory   int
 	MatchedEventName int
+	MissingEventName int
 	Emitted          int
 	Skipped          int
 	DecodeError      int
@@ -71,11 +75,11 @@ type poolRecord struct {
 	TokenAContractID  string         `json:"token_a_contract_id"`
 	TokenBContractID  string         `json:"token_b_contract_id"`
 	TokenPairKey      string         `json:"token_pair_key"`
-	LedgerSequence    any            `json:"ledger_sequence,omitempty"`
+	LedgerSequence    *int64         `json:"ledger_sequence,omitempty"`
 	LedgerClosedAt    string         `json:"ledger_closed_at,omitempty"`
 	TransactionHash   string         `json:"transaction_hash,omitempty"`
-	OperationIndex    any            `json:"operation_index,omitempty"`
-	EventIndex        any            `json:"event_index,omitempty"`
+	OperationIndex    *int64         `json:"operation_index,omitempty"`
+	EventIndex        *int64         `json:"event_index,omitempty"`
 	FactoryEventName  string         `json:"factory_event_name"`
 	SourceContractID  string         `json:"source_contract_id"`
 	DiscoveryMethod   string         `json:"discovery_method"`
@@ -95,12 +99,22 @@ func main() {
 		os.Exit(1)
 	}
 	if describe {
-		printDescribe()
+		if err := printDescribe(os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 		return
 	}
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		signal.Stop(sigCh)
+		_ = os.Stdin.Close()
+	}()
 	st, err := process(os.Stdin, os.Stdout, os.Stderr, cfg)
-	if cfg.StatsEnabled {
-		fmt.Fprintf(os.Stderr, "soroswap-pool-transform stats: read=%d parse_error=%d matched_factory=%d matched_event_name=%d emitted=%d skipped=%d decode_error=%d\n", st.Read, st.ParseError, st.MatchedFactory, st.MatchedEventName, st.Emitted, st.Skipped, st.DecodeError)
+	if cfg.StatsEnabled && !cfg.Quiet {
+		fmt.Fprintf(os.Stderr, "soroswap-pool-transform stats: read=%d parse_error=%d matched_factory=%d matched_event_name=%d missing_event_name=%d emitted=%d skipped=%d decode_error=%d\n", st.Read, st.ParseError, st.MatchedFactory, st.MatchedEventName, st.MissingEventName, st.Emitted, st.Skipped, st.DecodeError)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -113,7 +127,7 @@ func parseFlags(args []string) (config, bool, error) {
 	cfg := config{IncludeRaw: true}
 	fs := flag.NewFlagSet("soroswap-pool-transform", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	fs.StringVar(&cfg.Network, "network", "", "network name (pubnet, mainnet, testnet, futurenet, sandbox)")
+	fs.StringVar(&cfg.Network, "network", "", "network name (pubnet, testnet)")
 	fs.Var(&factories, "factory", "Soroswap factory contract ID allowlist (repeatable)")
 	fs.Var(&eventNames, "event-name", "accepted pool creation event symbol (repeatable)")
 	fs.BoolVar(&cfg.IncludeRaw, "include-raw", true, "include full raw event evidence")
@@ -125,7 +139,10 @@ func parseFlags(args []string) (config, bool, error) {
 	fs.BoolVar(&cfg.Quiet, "q", false, "suppress non-error diagnostics")
 	describe := fs.Bool("describe-json", false, "print registry/schema description JSON and exit")
 	if err := fs.Parse(args); err != nil {
-		return cfg, false, err
+		var usage strings.Builder
+		fs.SetOutput(&usage)
+		fs.PrintDefaults()
+		return cfg, false, fmt.Errorf("%w\n\nusage:\n%s", err, usage.String())
 	}
 	if *describe {
 		return cfg, true, nil
@@ -147,7 +164,10 @@ func parseFlags(args []string) (config, bool, error) {
 	if len(cfg.EventNames) == 0 {
 		cfg.EventNames = defaultEventNames
 	}
-	if cfg.Strict && cfg.Network != "" && len(cfg.Factories) == 0 {
+	if len(cfg.Factories) == 0 {
+		if cfg.Network == "" {
+			return cfg, false, errors.New("no factory allowlist configured; pass --network for known factories or --factory <contract_id>")
+		}
 		return cfg, false, fmt.Errorf("no known Soroswap factory for network %q; pass --factory", cfg.Network)
 	}
 	return cfg, *describe, nil
@@ -168,7 +188,7 @@ func process(r io.Reader, w io.Writer, errw io.Writer, cfg config) (stats, error
 		if err := json.Unmarshal([]byte(line), &row); err != nil {
 			st.ParseError++
 			st.Skipped++
-			if cfg.Verbose {
+			if cfg.Verbose && !cfg.Quiet {
 				fmt.Fprintf(errw, "line %d: parse error: %v\n", st.Read, err)
 			}
 			if cfg.Strict {
@@ -187,17 +207,21 @@ func process(r io.Reader, w io.Writer, errw io.Writer, cfg config) (stats, error
 		}
 		st.MatchedFactory++
 		eventName := eventName(row)
+		if eventName == "" {
+			st.MissingEventName++
+		}
 		if !acceptedEventName(eventName, cfg.EventNames) {
 			st.Skipped++
 			continue
 		}
 		st.MatchedEventName++
-		pool, err := decodePool(row)
+		pool, err := decodePool(row, sourceContract)
 		if err != nil {
 			st.DecodeError++
 			st.Skipped++
-			if cfg.Verbose {
-				fmt.Fprintf(errw, "line %d: decode error: %v\n", st.Read, err)
+			if cfg.Verbose && !cfg.Quiet {
+				fmt.Fprintf(errw, "line %d (tx=%s event_index=%v): decode error: %v\n",
+					st.Read, firstString(row, "transaction_hash", "tx_hash"), row["event_index"], err)
 			}
 			if cfg.Strict {
 				return st, fmt.Errorf("line %d: decode error: %w", st.Read, err)
@@ -213,19 +237,25 @@ func process(r io.Reader, w io.Writer, errw io.Writer, cfg config) (stats, error
 			FactoryContractID: sourceContract, PoolContractID: pool.Pool,
 			TokenAContractID: pool.TokenA, TokenBContractID: pool.TokenB,
 			TokenPairKey:   pairKey(pool.TokenA, pool.TokenB),
-			LedgerSequence: firstAny(row, "ledger_sequence", "ledger"), LedgerClosedAt: ledgerClosedAt(row),
-			TransactionHash: firstString(row, "transaction_hash", "tx_hash"), OperationIndex: firstAny(row, "operation_index"), EventIndex: firstAny(row, "event_index"),
+			LedgerSequence: firstInt64(row, "ledger_sequence", "ledger"), LedgerClosedAt: ledgerClosedAt(row),
+			TransactionHash: firstString(row, "transaction_hash", "tx_hash"), OperationIndex: firstInt64(row, "operation_index"), EventIndex: firstInt64(row, "event_index"),
 			FactoryEventName: eventName, SourceContractID: sourceContract, DiscoveryMethod: "contract-events",
 		}
 		if cfg.IncludeRaw {
 			rec.RawEvent = row
 		}
 		if err := enc.Encode(rec); err != nil {
-			return st, err
+			if errors.Is(err, syscall.EPIPE) || errors.Is(err, io.ErrClosedPipe) {
+				return st, nil
+			}
+			return st, fmt.Errorf("line %d: encode error: %w", st.Read, err)
 		}
 		st.Emitted++
 	}
 	if err := scanner.Err(); err != nil {
+		if errors.Is(err, bufio.ErrTooLong) {
+			return st, fmt.Errorf("input line exceeds 16 MiB scanner buffer; consider streaming the offending event separately: %w", err)
+		}
 		return st, err
 	}
 	return st, nil
@@ -238,12 +268,13 @@ func contractApplicationEvent(row map[string]any) bool {
 	return true
 }
 
+// factoryAllowed reports whether contract is in the configured allowlist.
+// An empty allowlist always returns false; parseFlags guarantees the
+// allowlist is non-empty for every CLI-driven invocation, so this is the
+// safe default for direct library use too.
 func factoryAllowed(contract string, factories []string) bool {
-	if contract == "" {
+	if contract == "" || len(factories) == 0 {
 		return false
-	}
-	if len(factories) == 0 {
-		return true
 	}
 	for _, f := range factories {
 		if contract == f {
@@ -276,7 +307,7 @@ func acceptedEventName(name string, accepted []string) bool {
 	return false
 }
 
-func decodePool(row map[string]any) (decodedPool, error) {
+func decodePool(row map[string]any, sourceContract string) (decodedPool, error) {
 	if p, ok := decodeObject(row); ok {
 		return p, nil
 	}
@@ -285,8 +316,9 @@ func decodePool(row map[string]any) (decodedPool, error) {
 			return p, nil
 		}
 	}
+	exclude := map[string]bool{sourceContract: true}
 	for _, key := range []string{"data_decoded", "data"} {
-		ids := collectContractIDs(row[key])
+		ids := excludeIDs(collectContractIDs(row[key]), exclude)
 		if len(ids) >= 3 {
 			return decodedPool{ids[0], ids[1], ids[2]}, nil
 		}
@@ -294,11 +326,21 @@ func decodePool(row map[string]any) (decodedPool, error) {
 	ids := append(collectContractIDs(row["topic_decoded"]), collectContractIDs(row["topics"])...)
 	ids = append(ids, collectContractIDs(row["data_decoded"])...)
 	ids = append(ids, collectContractIDs(row["data"])...)
-	ids = uniqueContracts(ids)
+	ids = excludeIDs(uniqueContracts(ids), exclude)
 	if len(ids) >= 3 {
 		return decodedPool{ids[0], ids[1], ids[2]}, nil
 	}
 	return decodedPool{}, errors.New("could not find token_a, token_b, and pool contract ids")
+}
+
+func excludeIDs(ids []string, exclude map[string]bool) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if !exclude[id] {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func decodeObjectValue(v any) (decodedPool, bool) {
@@ -357,8 +399,13 @@ func collectContractIDs(v any) []string {
 					return
 				}
 			}
-			for _, e := range t {
-				walk(e)
+			keys := make([]string, 0, len(t))
+			for k := range t {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				walk(t[k])
 			}
 		}
 	}
@@ -421,10 +468,22 @@ func firstString(m map[string]any, keys ...string) string {
 	return ""
 }
 
-func firstAny(m map[string]any, keys ...string) any {
+func firstInt64(m map[string]any, keys ...string) *int64 {
 	for _, k := range keys {
-		if v, ok := m[k]; ok {
-			return v
+		v, ok := m[k]
+		if !ok {
+			continue
+		}
+		switch t := v.(type) {
+		case float64:
+			n := int64(t)
+			return &n
+		case int64:
+			return &t
+		case json.Number:
+			if n, err := t.Int64(); err == nil {
+				return &n
+			}
 		}
 	}
 	return nil
@@ -434,61 +493,41 @@ func ledgerClosedAt(m map[string]any) string {
 	if s := firstString(m, "ledger_closed_at", "closed_at"); s != "" {
 		return s
 	}
-	if v, ok := m["timestamp"]; ok {
-		switch t := v.(type) {
-		case float64:
-			return time.Unix(int64(t), 0).UTC().Format(time.RFC3339)
-		case int64:
-			return time.Unix(t, 0).UTC().Format(time.RFC3339)
-		}
+	if v, ok := m["timestamp"].(float64); ok {
+		return time.Unix(int64(v), 0).UTC().Format(time.RFC3339)
 	}
 	return ""
 }
 
-type describeEnvelope struct {
-	Name        string           `json:"name"`
-	Type        string           `json:"type"`
-	Version     string           `json:"version"`
-	Description string           `json:"description"`
-	Schema      describeSchema   `json:"schema"`
-	Flags       []describeFlag   `json:"flags"`
-	Examples    []map[string]any `json:"examples"`
-}
-
-type describeSchema struct {
-	ID string `json:"id"`
-}
-
-type describeFlag struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Required    bool   `json:"required"`
-	Description string `json:"description"`
-	Default     string `json:"default"`
-}
-
-func printDescribe() {
-	desc := describeEnvelope{
+func buildDescribe() processor.DescribeEnvelope {
+	return processor.DescribeEnvelope{
 		Name:        "soroswap-pool-transform",
-		Type:        "transform",
+		Type:        processor.TypeTransform.String(),
 		Version:     version,
 		Description: "Transform contract-events JSONL into normalized Soroswap pool discovery records without querying RPC.",
-		Schema:      describeSchema{ID: schemaID},
-		Flags: []describeFlag{
-			{Name: "network", Type: "string", Description: "network name (pubnet, mainnet, testnet, futurenet, sandbox)", Default: ""},
-			{Name: "factory", Type: "stringArray", Description: "Soroswap factory contract ID allowlist (repeatable)", Default: ""},
+		Schema:      processor.DescribeSchema{ID: schemaID},
+		Flags: []processor.DescribeFlag{
+			{Name: "network", Type: "string", Description: "network name (pubnet, testnet)"},
+			{Name: "factory", Type: "stringArray", Description: "Soroswap factory contract ID allowlist (repeatable)"},
 			{Name: "event-name", Type: "stringArray", Description: "accepted pool creation event symbol (repeatable)", Default: strings.Join(defaultEventNames, ",")},
 			{Name: "include-raw", Type: "bool", Description: "include full raw event evidence", Default: "true"},
 			{Name: "omit-raw", Type: "bool", Description: "omit raw_event from output", Default: "false"},
 			{Name: "strict", Type: "bool", Description: "exit non-zero on malformed JSON or undecodable matching events", Default: "false"},
 			{Name: "stats", Type: "bool", Description: "print summary counts to stderr", Default: "false"},
 			{Name: "verbose", Type: "bool", Description: "print per-error diagnostics to stderr", Default: "false"},
-			{Name: "quiet", Type: "bool", Description: "suppress non-error diagnostics", Default: "false"},
+			{Name: "quiet", Type: "bool", Description: "suppress all non-error stderr output", Default: "false"},
 		},
-		Examples: []map[string]any{
-			{"description": "Historical archive backfill", "command": "nebu fetch --network pubnet --mode archive --start-ledger 50000000 --end-ledger 51000000 | contract-events | soroswap-pool-transform --network pubnet"},
+		Examples: []processor.DescribeExample{
+			{Comment: "Historical archive backfill", Command: "nebu fetch --network pubnet --mode archive --start-ledger 50000000 --end-ledger 51000000 | contract-events | soroswap-pool-transform --network pubnet"},
 		},
 	}
-	b, _ := json.MarshalIndent(desc, "", "  ")
-	fmt.Println(string(b))
+}
+
+func printDescribe(w io.Writer) error {
+	b, err := json.MarshalIndent(buildDescribe(), "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(w, string(b))
+	return err
 }

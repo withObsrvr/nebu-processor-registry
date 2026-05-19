@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 )
@@ -12,7 +13,7 @@ const (
 	tokenA  = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	tokenB  = "CBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
 	pool    = "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
-	other   = "CDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+	other   = "CDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
 )
 
 func runTransform(t *testing.T, input string, cfg config) (string, string, stats, error) {
@@ -85,6 +86,72 @@ func TestNetworkPassphraseAlias(t *testing.T) {
 	}
 }
 
+func TestNormalizeNetworkPassphrases(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Public Global Stellar Network ; September 2015", "pubnet"},
+		{"Test SDF Network ; September 2015", "testnet"},
+		{"Test SDF Future Network ; October 2022", "futurenet"},
+		{"mainnet", "pubnet"},
+		{"pubnet", "pubnet"},
+		{"testnet", "testnet"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		if got := normalizeNetwork(tc.in); got != tc.want {
+			t.Errorf("normalizeNetwork(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestBareSymbolInTopicDecoded(t *testing.T) {
+	input := `{"contract_id":"` + factory + `","type":"contract","topic_decoded":["new_pair","` + tokenA + `","` + tokenB + `"],"data_decoded":["` + pool + `"]}` + "\n"
+	_, _, st, err := runTransform(t, input, config{Factories: []string{factory}, EventNames: defaultEventNames})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Emitted != 1 {
+		t.Fatalf("bare-string symbol in topic_decoded[0] should match: %+v", st)
+	}
+}
+
+func TestMultiLineStreamMixedEmissions(t *testing.T) {
+	rec1 := `{"contract_id":"` + factory + `","type":"contract","event_type":"pair_created","data_decoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}`
+	skip := `{"contract_id":"` + factory + `","type":"contract","event_type":"transfer","data_decoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}`
+	rec2 := `{"contract_id":"` + factory + `","type":"contract","event_type":"new_pair","data_decoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}`
+	out, _, st, err := runTransform(t, rec1+"\n"+skip+"\n"+rec2+"\n", config{Factories: []string{factory}, EventNames: defaultEventNames})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Read != 3 || st.Emitted != 2 || st.Skipped != 1 {
+		t.Fatalf("expected read=3 emitted=2 skipped=1, got %+v", st)
+	}
+	if got := strings.Count(strings.TrimSpace(out), "\n") + 1; got != 2 {
+		t.Fatalf("expected 2 output lines, got %d", got)
+	}
+}
+
+func TestDuplicatePoolEmittedTwice(t *testing.T) {
+	row := `{"contract_id":"` + factory + `","type":"contract","event_type":"pair_created","data_decoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}` + "\n"
+	_, _, st, err := runTransform(t, row+row, config{Factories: []string{factory}, EventNames: defaultEventNames})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Emitted != 2 {
+		t.Fatalf("transform does not dedupe; expected 2 emissions, got %d", st.Emitted)
+	}
+}
+
+func TestMissingEventNameCounter(t *testing.T) {
+	input := `{"contract_id":"` + factory + `","type":"contract","data_decoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}` + "\n"
+	_, _, st, err := runTransform(t, input, config{Factories: []string{factory}, EventNames: defaultEventNames})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.MissingEventName != 1 || st.Emitted != 0 {
+		t.Fatalf("expected MissingEventName=1 Emitted=0, got %+v", st)
+	}
+}
+
 func TestNonMatchingEventsSkipped(t *testing.T) {
 	input := `{"contract_id":"` + other + `","type":"contract","event_type":"pair_created","data_decoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}` + "\n" +
 		`{"contract_id":"` + factory + `","type":"contract","event_type":"transfer","data_decoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}` + "\n"
@@ -111,5 +178,138 @@ func TestMalformedAndStrictDecode(t *testing.T) {
 	_, _, _, err = runTransform(t, input, config{Factories: []string{factory}, EventNames: defaultEventNames, Strict: true})
 	if err == nil {
 		t.Fatal("expected strict decode error")
+	}
+}
+
+func TestQuietSuppressesVerboseDiagnostics(t *testing.T) {
+	_, errOut, _, _ := runTransform(t, "{bad\n", config{Verbose: true})
+	if !strings.Contains(errOut, "parse error") {
+		t.Fatalf("verbose should emit parse error; got %q", errOut)
+	}
+	_, errOut, _, _ = runTransform(t, "{bad\n", config{Verbose: true, Quiet: true})
+	if errOut != "" {
+		t.Fatalf("quiet should suppress verbose diagnostics; got %q", errOut)
+	}
+}
+
+func TestParseFlagsRequiresFactory(t *testing.T) {
+	if _, _, err := parseFlags(nil); err == nil {
+		t.Fatal("expected error when no network and no factory")
+	}
+	if _, _, err := parseFlags([]string{"--network", "sandbox"}); err == nil {
+		t.Fatal("expected error when network has no known factory and none provided")
+	}
+	cfg, _, err := parseFlags([]string{"--network", "testnet"})
+	if err != nil {
+		t.Fatalf("known network should resolve factory: %v", err)
+	}
+	if len(cfg.Factories) == 0 {
+		t.Fatal("testnet should auto-populate factory allowlist")
+	}
+	if _, _, err := parseFlags([]string{"--factory", factory}); err != nil {
+		t.Fatalf("explicit factory should be accepted: %v", err)
+	}
+}
+
+func TestFactoryAllowlistRejectsUnknownContract(t *testing.T) {
+	input := `{"contract_id":"` + other + `","type":"contract","event_type":"pair_created","data_decoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}` + "\n"
+	out, _, st, err := runTransform(t, input, config{Factories: []string{factory}, EventNames: defaultEventNames})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "" || st.Emitted != 0 {
+		t.Fatalf("non-factory contract must not emit: out=%q stats=%+v", out, st)
+	}
+	_, _, st, err = runTransform(t, input, config{EventNames: defaultEventNames})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Emitted != 0 {
+		t.Fatalf("empty allowlist must not emit: %+v", st)
+	}
+}
+
+func TestParseFlagsInvalidFactory(t *testing.T) {
+	if _, _, err := parseFlags([]string{"--factory", "not-a-contract-id"}); err == nil {
+		t.Fatal("expected error for invalid factory ID")
+	}
+}
+
+func TestParseFlagsOmitRawOverridesIncludeRaw(t *testing.T) {
+	cfg, _, err := parseFlags([]string{"--factory", factory, "--include-raw", "--omit-raw"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.IncludeRaw {
+		t.Fatal("--omit-raw must win over --include-raw")
+	}
+}
+
+func TestPrintDescribeIncludesAllFlags(t *testing.T) {
+	var buf bytes.Buffer
+	if err := printDescribe(&buf); err != nil {
+		t.Fatal(err)
+	}
+	var env struct {
+		Name   string
+		Type   string
+		Schema struct{ ID string }
+		Flags  []struct {
+			Name        string
+			Description string
+		}
+	}
+	if err := json.Unmarshal(buf.Bytes(), &env); err != nil {
+		t.Fatalf("describe output is not valid JSON: %v", err)
+	}
+	if env.Name != "soroswap-pool-transform" || env.Type != "transform" || env.Schema.ID != schemaID {
+		t.Fatalf("envelope basics wrong: %+v", env)
+	}
+	wantFlags := []string{"network", "factory", "event-name", "include-raw", "omit-raw", "strict", "stats", "verbose", "quiet"}
+	got := make(map[string]bool, len(env.Flags))
+	for _, f := range env.Flags {
+		got[f.Name] = true
+	}
+	for _, w := range wantFlags {
+		if !got[w] {
+			t.Errorf("describe envelope missing flag %q", w)
+		}
+	}
+}
+
+func TestEncodeBrokenPipeIsCleanExit(t *testing.T) {
+	input := `{"network":"testnet","contract_id":"` + factory + `","type":"contract","event_type":"pair_created","data_decoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}` + "\n"
+	closedWriter := &errWriter{err: io.ErrClosedPipe}
+	st, err := process(strings.NewReader(input), closedWriter, io.Discard, config{Factories: []string{factory}, EventNames: defaultEventNames})
+	if err != nil {
+		t.Fatalf("EPIPE should produce a clean exit, got %v", err)
+	}
+	if st.Emitted != 0 {
+		t.Fatalf("Emitted should not increment on encode failure, got %d", st.Emitted)
+	}
+}
+
+type errWriter struct{ err error }
+
+func (w *errWriter) Write(_ []byte) (int, error) { return 0, w.err }
+
+func TestFallbackDecodeIsDeterministic(t *testing.T) {
+	input := `{"contract_id":"` + factory + `","type":"contract","event_type":"new_pair","data_decoded":{"alpha":"` + tokenA + `","beta":"` + tokenB + `","gamma":"` + pool + `"}}` + "\n"
+	cfg := config{Factories: []string{factory}, EventNames: defaultEventNames}
+	first, _, _, err := runTransform(t, input, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == "" {
+		t.Fatal("fallback path should emit a record")
+	}
+	for i := 0; i < 50; i++ {
+		got, _, _, err := runTransform(t, input, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != first {
+			t.Fatalf("non-deterministic output on iteration %d:\nfirst=%s\ngot  =%s", i, first, got)
+		}
 	}
 }
