@@ -373,11 +373,62 @@ func excludeIDs(ids []string, exclude map[string]bool) []string {
 }
 
 func decodeObjectValue(v any) (decodedPool, bool) {
+	if p, ok := decodeSCValMapEntries(v); ok {
+		return p, true
+	}
 	m, ok := v.(map[string]any)
 	if !ok {
 		return decodedPool{}, false
 	}
 	return decodeObject(m)
+}
+
+func decodeSCValMapEntries(v any) (decodedPool, bool) {
+	var p decodedPool
+	var found bool
+	var walk func(any)
+	walk = func(x any) {
+		switch t := x.(type) {
+		case []any:
+			for _, e := range t {
+				walk(e)
+			}
+		case map[string]any:
+			if entries, ok := t["entries"].([]any); ok {
+				for _, e := range entries {
+					entry, ok := e.(map[string]any)
+					if !ok {
+						continue
+					}
+					name := scalarSymbol(entry["key"])
+					id := firstContractID(entry["val"])
+					if name == "" || id == "" {
+						continue
+					}
+					assignDecodedPoolField(&p, name, id)
+					found = true
+				}
+			}
+			for _, key := range []string{"mapValue", "map_value", "map"} {
+				if child, ok := t[key]; ok {
+					walk(child)
+				}
+			}
+		}
+	}
+	walk(v)
+	return p, found && isContractID(p.TokenA) && isContractID(p.TokenB) && isContractID(p.Pool)
+}
+
+func assignDecodedPoolField(p *decodedPool, key, id string) {
+	switch normKey(key) {
+	case "tokena", "token0":
+		p.TokenA = id
+	case "tokenb", "token1":
+		p.TokenB = id
+	case "pair", "pool", "pairaddress", "pooladdress", "paircontractid", "poolcontractid":
+		p.Pool = id
+	}
 }
 
 func decodeObject(m map[string]any) (decodedPool, bool) {
@@ -392,14 +443,7 @@ func decodeObject(m map[string]any) (decodedPool, bool) {
 		if s == "" {
 			continue
 		}
-		switch normKey(k) {
-		case "tokena", "token0":
-			p.TokenA = s
-		case "tokenb", "token1":
-			p.TokenB = s
-		case "pair", "pool", "pairaddress", "pooladdress", "paircontractid", "poolcontractid":
-			p.Pool = s
-		}
+		assignDecodedPoolField(&p, k, s)
 	}
 	return p, isContractID(p.TokenA) && isContractID(p.TokenB) && isContractID(p.Pool)
 }
