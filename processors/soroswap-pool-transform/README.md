@@ -86,5 +86,5 @@ This processor uses JSONL for Unix/Nebu composability, but the output is shaped 
 
 ```bash
 go test ./...
-go build -o soroswap-pool-transform .
+go build -o soroswap-pool-transform ./cmd/soroswap-pool-transform
 ```

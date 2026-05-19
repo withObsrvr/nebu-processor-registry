@@ -55,7 +55,7 @@ docs:
     # Soroswap Pool Transform
 
     Reads newline-delimited JSON emitted by `contract-events`, filters Soroswap
-    factory pool-creation events, and emits one `nebu.soroswap_pool.v1` record
+    factory pool-creation events, and emits one `nebu.soroswap_pool_discovery.v1` record
     per discovered pool. This processor is transform-only: it does not call
     Soroban RPC, does not use `getEvents`, and does not own ledger traversal.
 
