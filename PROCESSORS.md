@@ -322,6 +322,27 @@ nebu install soroswap-detector
 token-transfer | soroswap-detector | json-file-sink
 ```
 
+### soroswap-pool-transform
+
+Transform contract-events JSONL into normalized Soroswap pool discovery records
+
+- **Version**: 1.0.0
+- **Language**: Go
+- **License**: MIT
+- **Schema**: `nebu.soroswap_pool.v1`
+- **Repository**: [github.com/withObsrvr/nebu-processor-registry](https://github.com/withObsrvr/nebu-processor-registry)
+
+```bash
+# Install
+nebu install soroswap-pool-transform
+
+# Historical archive backfill; no Soroban RPC getEvents queries
+nebu fetch --network pubnet --mode archive --start-ledger 50000000 --end-ledger 51000000 \
+  | contract-events \
+  | soroswap-pool-transform --network pubnet \
+  > soroswap_pools.jsonl
+```
+
 ### swap-candidate
 
 Detect swap patterns in token transfer events by buffering transfers per tx_hash
