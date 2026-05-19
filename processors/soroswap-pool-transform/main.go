@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -31,6 +32,10 @@ var knownFactories = map[string][]string{
 }
 
 var defaultEventNames = []string{"new_pair", "pair_created", "create_pair"}
+
+type helpRequested struct{ usage string }
+
+func (h *helpRequested) Error() string { return "help requested" }
 
 type stringList []string
 
@@ -55,14 +60,15 @@ type config struct {
 }
 
 type stats struct {
-	Read             int
-	ParseError       int
-	MatchedFactory   int
-	MatchedEventName int
-	MissingEventName int
-	Emitted          int
-	Skipped          int
-	DecodeError      int
+	Read              int
+	ParseError        int
+	MatchedFactory    int
+	MatchedEventName  int
+	MissingEventName  int
+	RejectedEventName int
+	Emitted           int
+	Skipped           int
+	DecodeError       int
 }
 
 type poolRecord struct {
@@ -94,6 +100,11 @@ type decodedPool struct {
 
 func main() {
 	cfg, describe, err := parseFlags(os.Args[1:])
+	var helpErr *helpRequested
+	if errors.As(err, &helpErr) {
+		fmt.Println(helpErr.usage)
+		return
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -105,6 +116,7 @@ func main() {
 		}
 		return
 	}
+	signal.Ignore(syscall.SIGPIPE)
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -114,7 +126,7 @@ func main() {
 	}()
 	st, err := process(os.Stdin, os.Stdout, os.Stderr, cfg)
 	if cfg.StatsEnabled && !cfg.Quiet {
-		fmt.Fprintf(os.Stderr, "soroswap-pool-transform stats: read=%d parse_error=%d matched_factory=%d matched_event_name=%d missing_event_name=%d emitted=%d skipped=%d decode_error=%d\n", st.Read, st.ParseError, st.MatchedFactory, st.MatchedEventName, st.MissingEventName, st.Emitted, st.Skipped, st.DecodeError)
+		fmt.Fprintf(os.Stderr, "soroswap-pool-transform stats: read=%d parse_error=%d matched_factory=%d matched_event_name=%d missing_event_name=%d rejected_event_name=%d emitted=%d skipped=%d decode_error=%d\n", st.Read, st.ParseError, st.MatchedFactory, st.MatchedEventName, st.MissingEventName, st.RejectedEventName, st.Emitted, st.Skipped, st.DecodeError)
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -142,6 +154,9 @@ func parseFlags(args []string) (config, bool, error) {
 		var usage strings.Builder
 		fs.SetOutput(&usage)
 		fs.PrintDefaults()
+		if errors.Is(err, flag.ErrHelp) {
+			return cfg, false, &helpRequested{usage: usage.String()}
+		}
 		return cfg, false, fmt.Errorf("%w\n\nusage:\n%s", err, usage.String())
 	}
 	if *describe {
@@ -200,17 +215,22 @@ func process(r io.Reader, w io.Writer, errw io.Writer, cfg config) (stats, error
 			st.Skipped++
 			continue
 		}
-		sourceContract := firstString(row, "contract_id", "contract", "source_contract_id")
+		sourceContract := firstString(row, "contract_id", "contractId", "contract", "source_contract_id", "sourceContractId")
 		if !factoryAllowed(sourceContract, cfg.Factories) {
 			st.Skipped++
 			continue
 		}
 		st.MatchedFactory++
 		eventName := eventName(row)
-		if eventName == "" {
-			st.MissingEventName++
-		}
 		if !acceptedEventName(eventName, cfg.EventNames) {
+			if eventName == "" {
+				st.MissingEventName++
+			} else {
+				st.RejectedEventName++
+				if cfg.Verbose && !cfg.Quiet {
+					fmt.Fprintf(errw, "line %d: rejected event name %q\n", st.Read, eventName)
+				}
+			}
 			st.Skipped++
 			continue
 		}
@@ -221,14 +241,14 @@ func process(r io.Reader, w io.Writer, errw io.Writer, cfg config) (stats, error
 			st.Skipped++
 			if cfg.Verbose && !cfg.Quiet {
 				fmt.Fprintf(errw, "line %d (tx=%s event_index=%v): decode error: %v\n",
-					st.Read, firstString(row, "transaction_hash", "tx_hash"), row["event_index"], err)
+					st.Read, firstString(row, "transaction_hash", "transactionHash", "tx_hash"), firstAny(row, "event_index", "eventIndex"), err)
 			}
 			if cfg.Strict {
 				return st, fmt.Errorf("line %d: decode error: %w", st.Read, err)
 			}
 			continue
 		}
-		network := normalizeNetwork(firstString(row, "network", "network_passphrase"))
+		network := normalizeNetwork(firstString(row, "network", "network_passphrase", "networkPassphrase"))
 		if network == "" {
 			network = cfg.Network
 		}
@@ -237,8 +257,8 @@ func process(r io.Reader, w io.Writer, errw io.Writer, cfg config) (stats, error
 			FactoryContractID: sourceContract, PoolContractID: pool.Pool,
 			TokenAContractID: pool.TokenA, TokenBContractID: pool.TokenB,
 			TokenPairKey:   pairKey(pool.TokenA, pool.TokenB),
-			LedgerSequence: firstInt64(row, "ledger_sequence", "ledger"), LedgerClosedAt: ledgerClosedAt(row),
-			TransactionHash: firstString(row, "transaction_hash", "tx_hash"), OperationIndex: firstInt64(row, "operation_index"), EventIndex: firstInt64(row, "event_index"),
+			LedgerSequence: firstInt64(row, "ledger_sequence", "ledgerSequence", "ledger"), LedgerClosedAt: ledgerClosedAt(row),
+			TransactionHash: firstString(row, "transaction_hash", "transactionHash", "tx_hash"), OperationIndex: firstInt64(row, "operation_index", "operationIndex"), EventIndex: firstInt64(row, "event_index", "eventIndex"),
 			FactoryEventName: eventName, SourceContractID: sourceContract, DiscoveryMethod: "contract-events",
 		}
 		if cfg.IncludeRaw {
@@ -253,6 +273,9 @@ func process(r io.Reader, w io.Writer, errw io.Writer, cfg config) (stats, error
 		st.Emitted++
 	}
 	if err := scanner.Err(); err != nil {
+		if errors.Is(err, os.ErrClosed) {
+			return st, nil
+		}
 		if errors.Is(err, bufio.ErrTooLong) {
 			return st, fmt.Errorf("input line exceeds 16 MiB scanner buffer; consider streaming the offending event separately: %w", err)
 		}
@@ -263,7 +286,8 @@ func process(r io.Reader, w io.Writer, errw io.Writer, cfg config) (stats, error
 
 func contractApplicationEvent(row map[string]any) bool {
 	if typ := firstString(row, "type"); typ != "" {
-		return typ == "contract"
+		t := strings.ToLower(typ)
+		return t == "contract" || t == "contract_event_type_contract"
 	}
 	return true
 }
@@ -285,10 +309,10 @@ func factoryAllowed(contract string, factories []string) bool {
 }
 
 func eventName(row map[string]any) string {
-	if s := firstString(row, "event_type"); s != "" {
+	if s := firstString(row, "event_type", "eventType"); s != "" {
 		return s
 	}
-	for _, key := range []string{"topic_decoded", "topics"} {
+	for _, key := range []string{"topic_decoded", "topicDecoded", "topics"} {
 		if a, ok := row[key].([]any); ok && len(a) > 0 {
 			if s := scalarSymbol(a[0]); s != "" {
 				return s
@@ -308,23 +332,28 @@ func acceptedEventName(name string, accepted []string) bool {
 }
 
 func decodePool(row map[string]any, sourceContract string) (decodedPool, error) {
-	if p, ok := decodeObject(row); ok {
+	validate := func(p decodedPool) bool {
+		return p.Pool != sourceContract && p.TokenA != sourceContract && p.TokenB != sourceContract
+	}
+	if p, ok := decodeObject(row); ok && validate(p) {
 		return p, nil
 	}
-	for _, key := range []string{"data_decoded", "data"} {
-		if p, ok := decodeObjectValue(row[key]); ok {
+	for _, key := range []string{"data_decoded", "dataDecoded", "data"} {
+		if p, ok := decodeObjectValue(row[key]); ok && validate(p) {
 			return p, nil
 		}
 	}
 	exclude := map[string]bool{sourceContract: true}
-	for _, key := range []string{"data_decoded", "data"} {
+	for _, key := range []string{"data_decoded", "dataDecoded", "data"} {
 		ids := excludeIDs(collectContractIDs(row[key]), exclude)
 		if len(ids) >= 3 {
 			return decodedPool{ids[0], ids[1], ids[2]}, nil
 		}
 	}
-	ids := append(collectContractIDs(row["topic_decoded"]), collectContractIDs(row["topics"])...)
+	ids := append(collectContractIDs(row["topic_decoded"]), collectContractIDs(row["topicDecoded"])...)
+	ids = append(ids, collectContractIDs(row["topics"])...)
 	ids = append(ids, collectContractIDs(row["data_decoded"])...)
+	ids = append(ids, collectContractIDs(row["dataDecoded"])...)
 	ids = append(ids, collectContractIDs(row["data"])...)
 	ids = excludeIDs(uniqueContracts(ids), exclude)
 	if len(ids) >= 3 {
@@ -393,7 +422,7 @@ func collectContractIDs(v any) []string {
 				walk(e)
 			}
 		case map[string]any:
-			for _, key := range []string{"contract_id", "contractId", "address", "value", "strkey", "symbol", "sym"} {
+			for _, key := range []string{"contract_id", "contractId", "address", "address_value", "addressValue", "value", "strkey", "symbol", "symbol_value", "symbolValue", "sym"} {
 				if s, ok := t[key].(string); ok && isContractID(s) {
 					out = append(out, s)
 					return
@@ -430,7 +459,7 @@ func scalarSymbol(v any) string {
 	case string:
 		return t
 	case map[string]any:
-		for _, k := range []string{"symbol", "sym", "value"} {
+		for _, k := range []string{"symbol", "symbol_value", "symbolValue", "sym", "value"} {
 			if s, ok := t[k].(string); ok {
 				return s
 			}
@@ -468,6 +497,15 @@ func firstString(m map[string]any, keys ...string) string {
 	return ""
 }
 
+func firstAny(m map[string]any, keys ...string) any {
+	for _, k := range keys {
+		if v, ok := m[k]; ok {
+			return v
+		}
+	}
+	return nil
+}
+
 func firstInt64(m map[string]any, keys ...string) *int64 {
 	for _, k := range keys {
 		v, ok := m[k]
@@ -478,10 +516,8 @@ func firstInt64(m map[string]any, keys ...string) *int64 {
 		case float64:
 			n := int64(t)
 			return &n
-		case int64:
-			return &t
-		case json.Number:
-			if n, err := t.Int64(); err == nil {
+		case string:
+			if n, err := strconv.ParseInt(t, 10, 64); err == nil {
 				return &n
 			}
 		}
@@ -490,7 +526,7 @@ func firstInt64(m map[string]any, keys ...string) *int64 {
 }
 
 func ledgerClosedAt(m map[string]any) string {
-	if s := firstString(m, "ledger_closed_at", "closed_at"); s != "" {
+	if s := firstString(m, "ledger_closed_at", "ledgerClosedAt", "closed_at", "closedAt"); s != "" {
 		return s
 	}
 	if v, ok := m["timestamp"].(float64); ok {

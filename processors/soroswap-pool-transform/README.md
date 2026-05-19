@@ -60,11 +60,11 @@ FROM nebu('soroswap-pool-transform', '--network', 'testnet');
   "factory_event_name": "pair_created",
   "source_contract_id": "CDP3...JTBY",
   "discovery_method": "contract-events",
-  "raw_event": { "type": "contract", "contract_id": "CDP3...JTBY", "event_type": "pair_created", "topic_decoded": ["pair_created"], "data_decoded": { "token_a": "CB3T...OV2F", "token_b": "CDLZ...CYSC", "pair": "CDVA...FKDB" } }
+  "raw_event": { "type": "CONTRACT", "contractId": "CDP3...JTBY", "eventType": "pair_created", "topicDecoded": [{"symbolValue":"pair_created"}], "dataDecoded": { "token_a": "CB3T...OV2F", "token_b": "CDLZ...CYSC", "pair": "CDVA...FKDB" } }
 }
 ```
 
-`raw_event` is included by default for audit/replay evidence. Use `--omit-raw` to drop it entirely from output.
+`raw_event` is included by default for audit/replay evidence (preserved verbatim from upstream). Use `--omit-raw` to drop it entirely from output. Both snake_case and camelCase field names are accepted on input, so the processor works with `contract-events` (which emits camelCase via protojson) and with manually-fed snake_case test fixtures alike.
 
 ## Flags
 

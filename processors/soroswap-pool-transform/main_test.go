@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"flag"
 	"io"
 	"strings"
 	"testing"
@@ -292,6 +294,95 @@ func TestEncodeBrokenPipeIsCleanExit(t *testing.T) {
 type errWriter struct{ err error }
 
 func (w *errWriter) Write(_ []byte) (int, error) { return 0, w.err }
+
+func TestHelpFlagReturnsHelpRequested(t *testing.T) {
+	_, _, err := parseFlags([]string{"--help"})
+	var help *helpRequested
+	if !errors.As(err, &help) {
+		t.Fatalf("--help should produce helpRequested, got %v", err)
+	}
+	if !strings.Contains(help.usage, "factory") {
+		t.Fatalf("help usage missing flag list: %q", help.usage)
+	}
+	if errors.Is(err, flag.ErrHelp) && !errors.As(err, &help) {
+		t.Fatal("flag.ErrHelp should be wrapped as helpRequested, not bare")
+	}
+}
+
+func TestFirstInt64HandlesStringNumeric(t *testing.T) {
+	got := firstInt64(map[string]any{"ledger_sequence": "12345"}, "ledger_sequence")
+	if got == nil || *got != 12345 {
+		t.Fatalf("string-encoded int should parse, got %v", got)
+	}
+	if firstInt64(map[string]any{"x": "not-a-number"}, "x") != nil {
+		t.Fatal("non-numeric string should return nil")
+	}
+	if firstInt64(map[string]any{"x": true}, "x") != nil {
+		t.Fatal("unsupported type should return nil")
+	}
+}
+
+func TestCamelCaseUpstreamFieldsAccepted(t *testing.T) {
+	input := `{"networkPassphrase":"Test SDF Network ; September 2015","ledgerSequence":2606504,"transactionHash":"42a7","contractId":"` + factory + `","type":"CONTRACT","eventType":"pair_created","topicDecoded":[{"symbolValue":"pair_created"}],"dataDecoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"},"operationIndex":0,"eventIndex":3}` + "\n"
+	out, _, st, err := runTransform(t, input, config{Factories: []string{factory}, EventNames: defaultEventNames, IncludeRaw: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Emitted != 1 {
+		t.Fatalf("camelCase upstream row should emit, got %+v", st)
+	}
+	var rec map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec["network"] != "testnet" {
+		t.Fatalf("networkPassphrase alias failed: %v", rec["network"])
+	}
+	if rec["transaction_hash"] != "42a7" {
+		t.Fatalf("transactionHash alias failed: %v", rec["transaction_hash"])
+	}
+	if v, _ := rec["ledger_sequence"].(float64); int64(v) != 2606504 {
+		t.Fatalf("ledgerSequence alias failed: %v", rec["ledger_sequence"])
+	}
+	if v, _ := rec["event_index"].(float64); int64(v) != 3 {
+		t.Fatalf("eventIndex alias failed: %v", rec["event_index"])
+	}
+}
+
+func TestFactoryNeverAppearsInTokenSlot(t *testing.T) {
+	input := `{"contract_id":"` + factory + `","type":"contract","event_type":"pair_created","data_decoded":{"token_a":"` + factory + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}` + "\n"
+	_, _, st, err := runTransform(t, input, config{Factories: []string{factory}, EventNames: defaultEventNames})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Emitted != 0 || st.DecodeError != 1 {
+		t.Fatalf("factory landing in token slot should fail decode: %+v", st)
+	}
+}
+
+func TestRejectedEventNameCounter(t *testing.T) {
+	input := `{"contract_id":"` + factory + `","type":"contract","event_type":"transfer","data_decoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}` + "\n"
+	_, _, st, err := runTransform(t, input, config{Factories: []string{factory}, EventNames: defaultEventNames})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.RejectedEventName != 1 || st.MissingEventName != 0 || st.Emitted != 0 {
+		t.Fatalf("wrong-name event should increment RejectedEventName only: %+v", st)
+	}
+}
+
+func TestOptionalNumericFieldsOmittedWhenAbsent(t *testing.T) {
+	input := `{"contract_id":"` + factory + `","type":"contract","event_type":"pair_created","data_decoded":{"token_a":"` + tokenA + `","token_b":"` + tokenB + `","pair":"` + pool + `"}}` + "\n"
+	out, _, _, err := runTransform(t, input, config{Factories: []string{factory}, EventNames: defaultEventNames, IncludeRaw: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"ledger_sequence", "operation_index", "event_index"} {
+		if strings.Contains(out, field) {
+			t.Errorf("%s should be omitted when absent from input; output: %s", field, out)
+		}
+	}
+}
 
 func TestFallbackDecodeIsDeterministic(t *testing.T) {
 	input := `{"contract_id":"` + factory + `","type":"contract","event_type":"new_pair","data_decoded":{"alpha":"` + tokenA + `","beta":"` + tokenB + `","gamma":"` + pool + `"}}` + "\n"
