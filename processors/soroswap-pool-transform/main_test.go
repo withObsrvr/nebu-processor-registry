@@ -384,6 +384,24 @@ func TestOptionalNumericFieldsOmittedWhenAbsent(t *testing.T) {
 	}
 }
 
+func TestDecodeObjectIsDeterministicWithAliasCollision(t *testing.T) {
+	input := `{"contract_id":"` + factory + `","type":"contract","event_type":"pair_created","data_decoded":{"token_a":"` + tokenA + `","token0":"` + tokenB + `","token_b":"` + tokenB + `","token1":"` + tokenA + `","pair":"` + pool + `"}}` + "\n"
+	cfg := config{Factories: []string{factory}, EventNames: defaultEventNames, IncludeRaw: false}
+	first, _, _, err := runTransform(t, input, cfg)
+	if err != nil || first == "" {
+		t.Fatalf("setup failed: out=%q err=%v", first, err)
+	}
+	for i := 0; i < 50; i++ {
+		got, _, _, err := runTransform(t, input, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != first {
+			t.Fatalf("decodeObject non-deterministic on iteration %d:\nfirst=%s\ngot  =%s", i, first, got)
+		}
+	}
+}
+
 func TestFallbackDecodeIsDeterministic(t *testing.T) {
 	input := `{"contract_id":"` + factory + `","type":"contract","event_type":"new_pair","data_decoded":{"alpha":"` + tokenA + `","beta":"` + tokenB + `","gamma":"` + pool + `"}}` + "\n"
 	cfg := config{Factories: []string{factory}, EventNames: defaultEventNames}

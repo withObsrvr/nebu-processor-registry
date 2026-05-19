@@ -104,7 +104,7 @@ Index Soroswap pool creation events from the factory contract via getEvents RPC
 - **Schema**: `nebu.soroswap_pool.v1`
 - **Repository**: [github.com/withObsrvr/nebu-processor-registry](https://github.com/withObsrvr/nebu-processor-registry)
 
-RPC-driven discovery (origin). For deterministic historical backfills from archive ledgers without Soroban RPC, see `soroswap-pool-transform`. Both processors emit records under the `nebu.soroswap_pool.v1` schema identifier, but field names differ today.
+RPC-driven discovery (origin). For deterministic historical backfills from archive ledgers without Soroban RPC, see `soroswap-pool-transform` (different schema: `nebu.soroswap_pool_discovery.v1`).
 
 ```bash
 # Install
@@ -331,10 +331,10 @@ Transform contract-events JSONL into normalized Soroswap pool discovery records
 - **Version**: 1.0.0
 - **Language**: Go
 - **License**: MIT
-- **Schema**: `nebu.soroswap_pool.v1`
+- **Schema**: `nebu.soroswap_pool_discovery.v1`
 - **Repository**: [github.com/withObsrvr/nebu-processor-registry](https://github.com/withObsrvr/nebu-processor-registry)
 
-Transform-only (no RPC). For live RPC-driven discovery, see `soroswap-pool-indexer`. Both processors emit records under the `nebu.soroswap_pool.v1` schema identifier, but field names differ today.
+Transform-only (no RPC). For live RPC-driven discovery from the factory contract, see `soroswap-pool-indexer` (different schema: `nebu.soroswap_pool.v1`).
 
 ```bash
 # Install

@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	schemaID = "nebu.soroswap_pool.v1"
+	schemaID = "nebu.soroswap_pool_discovery.v1"
 	version  = "1.0.0"
 )
 
@@ -381,14 +381,18 @@ func decodeObjectValue(v any) (decodedPool, bool) {
 }
 
 func decodeObject(m map[string]any) (decodedPool, bool) {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 	var p decodedPool
-	for k, v := range m {
-		n := normKey(k)
-		s := firstContractID(v)
+	for _, k := range keys {
+		s := firstContractID(m[k])
 		if s == "" {
 			continue
 		}
-		switch n {
+		switch normKey(k) {
 		case "tokena", "token0":
 			p.TokenA = s
 		case "tokenb", "token1":

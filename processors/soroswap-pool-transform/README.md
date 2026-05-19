@@ -1,6 +1,6 @@
 # Soroswap Pool Transform
 
-`soroswap-pool-transform` reads `contract-events` JSONL from stdin and emits normalized Soroswap pool discovery records (`nebu.soroswap_pool.v1`). It is a pure transform: it does **not** query Soroban RPC or `getEvents`.
+`soroswap-pool-transform` reads `contract-events` JSONL from stdin and emits normalized Soroswap pool discovery records (`nebu.soroswap_pool_discovery.v1`). It is a pure transform: it does **not** query Soroban RPC or `getEvents`.
 
 ## Historical backfill
 
@@ -17,7 +17,7 @@ nebu fetch \
   > soroswap_pools.jsonl
 ```
 
-Use `--factory` to override or extend the known factory allowlist:
+Use `--factory` to override the known factory allowlist (when any `--factory` is supplied, it fully replaces the default for the network):
 
 ```bash
 cat contract_events.jsonl \
@@ -43,7 +43,7 @@ FROM nebu('soroswap-pool-transform', '--network', 'testnet');
 
 ```json
 {
-  "_schema": "nebu.soroswap_pool.v1",
+  "_schema": "nebu.soroswap_pool_discovery.v1",
   "_nebu_version": "1.0.0",
   "network": "testnet",
   "protocol": "soroswap",
@@ -68,7 +68,7 @@ FROM nebu('soroswap-pool-transform', '--network', 'testnet');
 
 ## Flags
 
-- `--network <pubnet|testnet>`: used when input rows omit `network`; also selects known factory defaults.
+- `--network <pubnet|testnet>`: used when input rows omit `network`; also selects the built-in factory defaults. Aliases like `mainnet`, `futurenet`, and the full Stellar network passphrases (e.g., `"Public Global Stellar Network ; September 2015"`) are also accepted on input/CLI and normalized; only `pubnet` and `testnet` have built-in factory defaults — other networks must pass `--factory`.
 - `--factory <contract_id>`: repeatable factory allowlist. Required if `--network` is omitted or has no known factory.
 - `--event-name <symbol>`: repeatable accepted pool creation event names. Defaults: `new_pair`, `pair_created`, `create_pair`.
 - `--include-raw` / `--omit-raw`: include or omit the original event in output (`--include-raw` is the default; `--omit-raw` overrides it).
@@ -80,7 +80,7 @@ FROM nebu('soroswap-pool-transform', '--network', 'testnet');
 
 ## Proto-first contract
 
-This processor uses JSONL for Unix/Nebu composability, but the output is shaped as the JSON projection of a future typed pool-discovery message. Registry metadata uses `_schema` and `_nebu_version` for compatibility with other nebu processors. It intentionally separates pool discovery (`nebu.soroswap_pool.v1`) from pool operation events such as deposits, withdrawals, and swaps.
+This processor uses JSONL for Unix/Nebu composability, but the output is shaped as the JSON projection of a future typed pool-discovery message. Registry metadata uses `_schema` and `_nebu_version` for compatibility with other nebu processors. It intentionally separates pool discovery (`nebu.soroswap_pool_discovery.v1`) from pool operation events such as deposits, withdrawals, and swaps.
 
 ## Development
 
