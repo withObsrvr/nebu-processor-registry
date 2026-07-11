@@ -38,6 +38,7 @@ processors/aggregator/aggregator
 processors/amount-filter/amount-filter
 processors/aquarius-detector/aquarius-detector
 processors/asset-filter/asset-filter
+processors/contract-created/contract-created
 processors/contract-events/contract-events
 processors/contract-filter/contract-filter
 processors/contract-invocation/contract-invocation
@@ -47,11 +48,13 @@ processors/json-file-sink/json-file-sink
 processors/kafka-sink/kafka-sink
 processors/liquidity-pool-events/liquidity-pool-events
 processors/nats-sink/nats-sink
+processors/nft-events/nft-events
 processors/postgres-sink/postgres-sink
 processors/rate-limiter/rate-limiter
 processors/s3-sink/s3-sink
 processors/soroswap-detector/soroswap-detector
 processors/soroswap-pool-indexer/soroswap-pool-indexer
+processors/soroswap-pool-transform/soroswap-pool-transform
 processors/swap-candidate/swap-candidate
 processors/swap-formatter/swap-formatter
 processors/swap-normalizer/swap-normalizer

@@ -179,7 +179,7 @@ module github.com/withObsrvr/nebu/examples/processors/{name}
 go 1.25.4
 
 require (
-    github.com/withObsrvr/nebu v0.6.5
+    github.com/withObsrvr/nebu v0.6.8
     // Add processor-specific dependencies
 )
 
