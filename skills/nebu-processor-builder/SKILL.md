@@ -216,7 +216,7 @@ module {MODULE_PATH}
 go 1.25.4
 
 require (
-    github.com/withObsrvr/nebu v0.6.5
+    github.com/withObsrvr/nebu v0.6.8
 )
 
 // Add type-specific dependencies:
