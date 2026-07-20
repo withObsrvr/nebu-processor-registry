@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package validator_analytics;
+
+option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/validator-analytics";
+
+// ValidatorLedgerAnalytics contains deterministic facts extracted from one
+// Stellar LedgerCloseMeta. Cross-ledger statistics such as close share,
+// consecutive-leader streaks, or runs tests are deliberately left to
+// downstream SQL and visualization tools.
+message ValidatorLedgerAnalytics {
+  uint32 ledger_sequence = 1;
+  int64 closed_at_unix = 2;
+  string ledger_hash = 3;
+  string previous_ledger_hash = 4;
+  uint32 protocol_version = 5;
+  string network_passphrase = 6;
+
+  // Canonical G-address derived from the signed ledger-close value.
+  string validator_address = 7;
+  // Base64-encoded ledger-close signature.
+  string ledger_close_signature = 8;
+  // False for ledgers whose SCP value does not carry validator attribution.
+  bool validator_attribution_available = 9;
+
+  uint32 transaction_count = 10;
+  uint32 successful_transaction_count = 11;
+  uint32 failed_transaction_count = 12;
+
+  // All operations included in the transaction set, including failed txs.
+  uint32 operation_count = 13;
+  // Operations belonging to successful transactions.
+  uint32 successful_operation_count = 14;
+
+  OperationCategoryCounts operation_categories = 15;
+  OperationCategoryCounts successful_operation_categories = 16;
+}
+
+// OperationCategoryCounts is an intentionally small, stable classification
+// used by the validator-analytics experiment. Unknown and future operation
+// types are counted as other until explicitly classified in a new schema.
+message OperationCategoryCounts {
+  uint32 account_creation = 1;
+  uint32 payments = 2;
+  uint32 offers_and_amms = 3;
+  uint32 trustlines = 4;
+  uint32 claimable_balances = 5;
+  uint32 sponsorship = 6;
+  uint32 soroban = 7;
+  uint32 other = 8;
+}

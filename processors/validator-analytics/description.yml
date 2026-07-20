@@ -1,0 +1,57 @@
+processor:
+  name: validator-analytics
+  type: origin
+  description: Extract per-ledger validator attribution and operation activity facts
+  version: 0.1.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+proto:
+  source: github.com/withObsrvr/nebu-processor-registry/processors/validator-analytics
+  package: validator_analytics
+
+schema:
+  version: v1
+  identifier: nebu.validator_analytics.v1
+  documentation: https://github.com/withObsrvr/nebu-processor-registry/blob/main/processors/validator-analytics/README.md
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install validator-analytics
+
+    # Extract a bounded ledger range
+    validator-analytics --start-ledger 60200000 --end-ledger 60200100 -q
+
+  examples: |
+    # Inspect per-ledger validator and activity facts
+    validator-analytics --start-ledger 60200000 --end-ledger 60200100 -q | jq
+
+    # Count ledgers closed by validator
+    validator-analytics --start-ledger 60200000 --end-ledger 60201000 -q | \
+      jq -r '.validatorAddress' | sort | uniq -c | sort -nr
+
+    # Load the replayable fact stream into a file for DuckDB analysis
+    validator-analytics --start-ledger 60200000 --end-ledger 60201000 -q | \
+      json-file-sink --file validator-ledgers.jsonl
+
+  extended_description: |
+    Emits one deterministic record per LedgerCloseMeta with signed ledger-close
+    validator attribution, transaction success totals, and explicit operation
+    category counts. Both all-operation and successful-operation counts are
+    included so downstream analysis does not accidentally treat failed
+    transactions as applied activity.
+
+    The processor deliberately does not resolve validator names or calculate
+    close share, streaks, or statistical bias. Validator identity can be joined
+    from Radar by validator public key, but identity registries change over time
+    and should not become an HTTP dependency of deterministic replay.
+    Cross-ledger statistics are better expressed as replayable SQL over the
+    emitted fact stream. Unknown future operation types remain in the other
+    category until the schema and classifier are deliberately updated.

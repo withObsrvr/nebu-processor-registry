@@ -22,6 +22,24 @@ nebu install account-effects
 account-effects --start-ledger 60200000 --end-ledger 60200100 | jq
 ```
 
+### contract-created
+
+Extract contract creation events from Stellar ledgers
+
+- **Version**: 0.1.0
+- **Language**: Go
+- **License**: MIT
+- **Schema**: `nebu.contract_created.v1`
+- **Repository**: [github.com/withObsrvr/nebu-processor-registry](https://github.com/withObsrvr/nebu-processor-registry)
+
+```bash
+# Install
+nebu install contract-created
+
+# Use as origin
+contract-created --start-ledger 60200000 --end-ledger 60200100 | jq
+```
+
 ### contract-events
 
 Extract and decode Soroban contract events from Stellar ledgers
@@ -92,6 +110,24 @@ nebu install liquidity-pool-events
 
 # Use as origin
 liquidity-pool-events --start-ledger 60200000 --end-ledger 60200100 | jq
+```
+
+### nft-events
+
+Extract NFT-like contract events and calls from Stellar ledgers
+
+- **Version**: 0.1.0
+- **Language**: Go
+- **License**: MIT
+- **Schema**: `nebu.nft_events.v1`
+- **Repository**: [github.com/withObsrvr/nebu-processor-registry](https://github.com/withObsrvr/nebu-processor-registry)
+
+```bash
+# Install
+nebu install nft-events
+
+# Use as origin
+nft-events --start-ledger 60200000 --end-ledger 60200100 | jq
 ```
 
 ### soroswap-pool-indexer
@@ -166,6 +202,24 @@ nebu install ttl-tracker
 
 # Use as origin
 ttl-tracker --start-ledger 60200000 --end-ledger 60200100 | jq
+```
+
+### validator-analytics
+
+Extract per-ledger validator attribution and operation activity facts
+
+- **Version**: 0.1.0
+- **Language**: Go
+- **License**: MIT
+- **Schema**: `nebu.validator_analytics.v1`
+- **Repository**: [github.com/withObsrvr/nebu-processor-registry](https://github.com/withObsrvr/nebu-processor-registry)
+
+```bash
+# Install
+nebu install validator-analytics
+
+# Use as origin
+validator-analytics --start-ledger 60200000 --end-ledger 60200100 | jq
 ```
 
 
@@ -542,6 +596,6 @@ token-transfer | webhook-sink
 
 ---
 
-*Total processors: 29*
+*Total processors: 33*
 
-*Last updated: 2026-04-09*
+*Last updated: 2026-07-20*
