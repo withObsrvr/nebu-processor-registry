@@ -49,9 +49,10 @@ docs:
     transactions as applied activity.
 
     The processor deliberately does not resolve validator names or calculate
-    close share, streaks, or statistical bias. Validator identity can be joined
-    from Radar by validator public key, but identity registries change over time
-    and should not become an HTTP dependency of deterministic replay.
-    Cross-ledger statistics are better expressed as replayable SQL over the
-    emitted fact stream. Unknown future operation types remain in the other
-    category until the schema and classifier are deliberately updated.
+    close share, streaks, or statistical bias. Use validator-identity-enricher
+    for a cached Radar join or a deterministic pinned-snapshot join by validator
+    public key; identity registries change over time and should not become an
+    HTTP dependency of deterministic replay. Cross-ledger statistics are better
+    expressed as replayable SQL over the emitted fact stream. Unknown future
+    operation types remain in the other category until the schema and
+    classifier are deliberately updated.

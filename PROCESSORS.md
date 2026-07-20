@@ -488,6 +488,26 @@ nebu install usdc-filter
 token-transfer | usdc-filter | json-file-sink
 ```
 
+### validator-identity-enricher
+
+Enrich validator analytics records with cached Radar or snapshot identity
+
+- **Version**: 0.1.0
+- **Language**: Go
+- **License**: MIT
+- **Schema**: `nebu.validator_analytics_enriched.v1`
+- **Repository**: [github.com/withObsrvr/nebu-processor-registry](https://github.com/withObsrvr/nebu-processor-registry)
+
+```bash
+# Install
+nebu install validator-identity-enricher
+
+# Enrich validator analytics facts with cached validator identity
+validator-analytics --start-ledger 60200000 --end-ledger 60200100 -q \
+  | validator-identity-enricher -q \
+  | json-file-sink --file validator-ledgers-enriched.jsonl
+```
+
 
 ## Sink Processors
 
@@ -596,6 +616,6 @@ token-transfer | webhook-sink
 
 ---
 
-*Total processors: 33*
+*Total processors: 34*
 
 *Last updated: 2026-07-20*
