@@ -137,7 +137,9 @@ func (r *RadarResolver) resolveOnce(ctx context.Context, endpoint, publicKey str
 		return LookupResult{Status: StatusUnavailable, Reason: "radar_transport_error"}
 	}
 	defer func() {
-		_ = resp.Body.Close() // The response has already been fully consumed or abandoned.
+		// Drain within the size limit so the connection can be reused.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxRadarResponseBytes))
+		_ = resp.Body.Close()
 	}()
 
 	switch resp.StatusCode {
@@ -147,6 +149,9 @@ func (r *RadarResolver) resolveOnce(ctx context.Context, endpoint, publicKey str
 		if err := decoder.Decode(&node); err != nil {
 			return LookupResult{Status: StatusUnavailable, Reason: "radar_invalid_response"}
 		}
+		if decoder.Decode(&json.RawMessage{}) != io.EOF {
+			return LookupResult{Status: StatusUnavailable, Reason: "radar_invalid_response"}
+		}
 		if node.PublicKey != publicKey {
 			return LookupResult{Status: StatusUnavailable, Reason: "radar_public_key_mismatch"}
 		}
@@ -154,7 +159,6 @@ func (r *RadarResolver) resolveOnce(ctx context.Context, endpoint, publicKey str
 	case http.StatusNotFound:
 		return LookupResult{Status: StatusNotFound, Reason: "radar_not_found"}
 	default:
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxRadarResponseBytes))
 		return LookupResult{Status: StatusUnavailable, Reason: "radar_http_" + strconv.Itoa(resp.StatusCode)}
 	}
 }

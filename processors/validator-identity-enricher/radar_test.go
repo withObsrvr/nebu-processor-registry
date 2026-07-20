@@ -67,6 +67,7 @@ func TestRadarResolverStatusMapping(t *testing.T) {
 		{name: "not found", statusCode: http.StatusNotFound, wantStatus: StatusNotFound, wantReason: "radar_not_found"},
 		{name: "rate limited", statusCode: http.StatusTooManyRequests, wantStatus: StatusUnavailable, wantReason: "radar_http_429"},
 		{name: "bad JSON", statusCode: http.StatusOK, body: `{`, wantStatus: StatusUnavailable, wantReason: "radar_invalid_response"},
+		{name: "trailing JSON", statusCode: http.StatusOK, body: fmt.Sprintf(`{"publicKey":%q}{"extra":true}`, testValidator), wantStatus: StatusUnavailable, wantReason: "radar_invalid_response"},
 		{name: "key mismatch", statusCode: http.StatusOK, body: `{"publicKey":"GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"}`, wantStatus: StatusUnavailable, wantReason: "radar_public_key_mismatch"},
 	}
 	for _, tt := range tests {
