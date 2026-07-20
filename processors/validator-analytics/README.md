@@ -61,5 +61,13 @@ GET https://radar.withobsrvr.com/api/v1/node/{validatorAddress}
 The response can include `name`, `alias`, `homeDomain`, and organization and
 health fields. This processor deliberately does not perform that lookup: an
 external HTTP call would make ledger replay non-deterministic and add a
-per-ledger latency dependency. Resolve identity in a cached downstream join and
-retain the public key as the canonical evidence field.
+per-ledger latency dependency. Use the separate `validator-identity-enricher`
+transform for a cached Radar join or a deterministic pinned-snapshot join:
+
+```bash
+validator-analytics --start-ledger 60200000 --end-ledger 60200100 -q | \
+  validator-identity-enricher -q
+```
+
+The public key remains the canonical evidence field even when an identity name
+cannot be resolved.

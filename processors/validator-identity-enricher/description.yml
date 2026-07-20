@@ -1,0 +1,52 @@
+processor:
+  name: validator-identity-enricher
+  type: transform
+  description: Enrich validator analytics records with cached Radar or snapshot identity
+  version: 0.1.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+schema:
+  version: v1
+  identifier: nebu.validator_analytics_enriched.v1
+  documentation: https://github.com/withObsrvr/nebu-processor-registry/blob/main/processors/validator-identity-enricher/README.md
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install validator-identity-enricher
+
+    # Enrich a bounded validator analytics stream
+    validator-analytics --start-ledger 60200000 --end-ledger 60200100 -q | \
+      validator-identity-enricher -q
+
+  examples: |
+    # Live mainnet Radar enrichment with process-local caching
+    validator-analytics --network mainnet \
+      --start-ledger 60200000 --end-ledger 60200100 -q | \
+      validator-identity-enricher --network mainnet -q | jq .
+
+    # Deterministic offline backfill from a pinned Radar snapshot
+    validator-analytics --network mainnet \
+      --start-ledger 60200000 --end-ledger 60200100 -q | \
+      validator-identity-enricher --source snapshot \
+        --snapshot radar-mainnet-nodes.json --network mainnet -q
+
+  extended_description: |
+    Adds a validatorIdentity object to nebu.validator_analytics.v1 records and
+    emits nebu.validator_analytics_enriched.v1. The original ledger facts are
+    preserved verbatim. Identity resolution is a soft dependency: resolved,
+    not_found, and unavailable states are represented in the output and no
+    ledger is dropped because Radar is slow or unavailable.
+
+    The Radar adapter uses bounded timeouts, one transient retry, a bounded LRU
+    cache, negative caching for 404s, and a short failure TTL. The snapshot
+    adapter loads a pinned Radar bulk response once for deterministic offline
+    and historical backfills. Only stable identity fields are copied; volatile
+    validator health and trust metrics remain outside this schema.
