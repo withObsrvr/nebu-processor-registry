@@ -1,0 +1,109 @@
+processor:
+  name: sqlite-sink
+  type: sink
+  description: Write nebu events to a local SQLite database
+  version: 0.1.0
+  language: TypeScript
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+install:
+  kind: binary
+  url: https://github.com/withObsrvr/nebu-processor-registry/releases/download/sqlite-sink-v{version}/sqlite-sink-{os}-{arch}{exe}
+  checksums: https://github.com/withObsrvr/nebu-processor-registry/releases/download/sqlite-sink-v{version}/checksums.txt
+
+docs:
+  quick_start: |
+    # Install the prebuilt binary (no toolchain required)
+    nebu install sqlite-sink
+
+    # Store a ledger range
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      sqlite-sink --db transfers.db
+
+    # Query it with any SQLite client
+    sqlite3 transfers.db \
+      "SELECT json_extract(event, '$.transfer.assetCode') AS asset, COUNT(*)
+       FROM events GROUP BY asset"
+
+  examples: |
+    # Store a bounded range
+    token-transfer --start-ledger 60200000 --end-ledger 60200100 | \
+      sqlite-sink --db transfers.db
+
+    # Filter first, custom table
+    token-transfer --start-ledger 60200000 --follow | \
+      jq -c 'select(.transfer.assetCode == "USDC")' | \
+      sqlite-sink --db stellar.db --table usdc_transfers
+
+    # Fan out: live NATS AND a local queryable archive
+    token-transfer --start-ledger 60200000 --follow | \
+      tee >(nats-sink --subject "stellar.live" --jetstream) | \
+      sqlite-sink --db archive.db
+
+    # Query stored events by ledger range (indexed)
+    sqlite3 transfers.db \
+      "SELECT COUNT(*) FROM events
+       WHERE ledger_sequence BETWEEN 60200000 AND 60200050"
+
+  extended_description: |
+    # SQLite Sink Processor
+
+    Writes nebu events to a local SQLite database file — a zero-setup,
+    queryable archive. Written in TypeScript and compiled to standalone
+    binaries with Bun (SQLite ships inside via bun:sqlite, so there are
+    no dependencies at all). This processor is the reference
+    implementation of the language-agnostic nebu processor contract
+    (docs/PROCESSOR_CONTRACT.md in the nebu repo), demonstrating that
+    processors need not be written in Go.
+
+    ---
+
+    ## Storage layout
+
+    Events land in a table (default `events`) with indexed envelope
+    columns plus the full event as JSON:
+
+    | Column | Type | Source |
+    |--------|------|--------|
+    | `id` | INTEGER PRIMARY KEY | rowid |
+    | `schema` | TEXT (indexed) | `_schema` |
+    | `nebu_version` | TEXT | `_nebu_version` |
+    | `ledger_sequence` | INTEGER (indexed) | `meta.ledgerSequence` |
+    | `tx_hash` | TEXT | `meta.txHash` |
+    | `event` | TEXT | the full event JSON |
+
+    Reach into payloads with SQLite's JSON functions:
+    `json_extract(event, '$.transfer.amount')`.
+
+    ---
+
+    ## Configuration
+
+    | Flag | Description | Default |
+    |------|-------------|---------|
+    | `--db <path>` | Database file, created if missing (required) | — |
+    | `--table <name>` | Target table, created if missing | events |
+    | `--batch-size <n>` | Events per insert transaction | 100 |
+    | `--flush-interval-ms <ms>` | Flush partial batches after idle time | 1000 |
+    | `-q, --quiet` | Suppress banner | false |
+
+    ---
+
+    ## Delivery semantics
+
+    - Inserts are batched in transactions (default 100 events) for write
+      throughput; a partial batch flushes after the idle interval.
+    - The database uses WAL mode, so readers can query while the sink
+      writes.
+    - Malformed input lines are warned on stderr and skipped; they never
+      crash the stream.
+    - Insert failures are fatal (exit 1) — the sink never silently drops
+      data.
+    - SIGINT/SIGTERM flush the pending batch and close the database
+      before exiting 0.

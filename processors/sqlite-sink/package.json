@@ -1,0 +1,18 @@
+{
+  "name": "sqlite-sink",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Write nebu events to a local SQLite database",
+  "license": "MIT",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "build": "bun build --compile src/main.ts --outfile dist/sqlite-sink",
+    "build:all": "bun run build:linux-amd64 && bun run build:linux-arm64 && bun run build:darwin-amd64 && bun run build:darwin-arm64 && bun run build:windows-amd64",
+    "build:linux-amd64": "bun build --compile --target=bun-linux-x64 src/main.ts --outfile dist/sqlite-sink-linux-amd64",
+    "build:linux-arm64": "bun build --compile --target=bun-linux-arm64 src/main.ts --outfile dist/sqlite-sink-linux-arm64",
+    "build:darwin-amd64": "bun build --compile --target=bun-darwin-x64 src/main.ts --outfile dist/sqlite-sink-darwin-amd64",
+    "build:darwin-arm64": "bun build --compile --target=bun-darwin-arm64 src/main.ts --outfile dist/sqlite-sink-darwin-arm64",
+    "build:windows-amd64": "bun build --compile --target=bun-windows-x64 src/main.ts --outfile dist/sqlite-sink-windows-amd64.exe"
+  }
+}

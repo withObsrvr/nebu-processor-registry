@@ -1,0 +1,58 @@
+name: release-sqlite-sink
+
+on:
+  push:
+    tags: ["sqlite-sink-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: processors/sqlite-sink
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Check tag matches declared versions
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#sqlite-sink-v}"
+          for f in "package.json:\"version\": \"$TAG_VERSION\"" "description.yml:version: $TAG_VERSION" "src/main.ts:VERSION = \"$TAG_VERSION\""; do
+            file="${f%%:*}"; needle="${f#*:}"
+            grep -qF "$needle" "$file" || { echo "::error::$file does not declare version $TAG_VERSION"; exit 1; }
+          done
+
+      - name: Build all platforms
+        run: bun run build:all
+
+      - name: Generate checksums
+        run: cd dist && sha256sum sqlite-sink-* > checksums.txt
+
+      - name: Contract smoke test
+        run: |
+          BIN=dist/sqlite-sink-linux-amd64
+          # --describe-json: bare invocation, valid JSON, exit 0
+          "$BIN" --describe-json | jq -e '.name == "sqlite-sink" and .type == "sink"'
+          # NDJSON loop: malformed line warns but does not kill the stream
+          printf 'not json\n{"_schema":"nebu.test.v1","meta":{"ledgerSequence":1},"x":1}\n' | \
+            "$BIN" --db /tmp/smoke.db -q
+          # The event actually landed
+          COUNT=$(sqlite3 /tmp/smoke.db "SELECT COUNT(*) FROM events")
+          [ "$COUNT" = "1" ] || { echo "::error::expected 1 event in smoke.db, got $COUNT"; exit 1; }
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: processors/sqlite-sink/dist/*
+          body: |
+            sqlite-sink ${{ github.ref_name }} — prebuilt binaries for `nebu install sqlite-sink`.
+
+            Artifacts are named `sqlite-sink-{os}-{arch}` (Go GOOS/GOARCH
+            naming) and verified against `checksums.txt` (sha256) at install
+            time.

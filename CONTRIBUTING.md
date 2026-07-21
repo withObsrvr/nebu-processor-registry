@@ -42,6 +42,23 @@ my-processor/
 └── *_test.go             # Tests
 ```
 
+#### Processors in Other Languages
+
+Processors do not have to be written in Go. Any binary that satisfies the
+[nebu processor contract](https://github.com/withObsrvr/nebu/blob/main/docs/PROCESSOR_CONTRACT.md)
+(NDJSON over stdin/stdout, `--describe-json`, stderr discipline) is a
+nebu processor. Non-Go processors publish prebuilt per-platform binaries
+and declare an `install` block in `description.yml` so `nebu install`
+can download and checksum-verify them — see the
+[registry spec](https://github.com/withObsrvr/nebu/blob/main/docs/REGISTRY_SPEC.md).
+
+The reference implementation is [`sqlite-sink`](processors/sqlite-sink/)
+(TypeScript, compiled with Bun, zero dependencies): its
+[`src/main.ts`](processors/sqlite-sink/src/main.ts) marks every contract
+rule with a `Contract:` comment, and its
+[release workflow](.github/workflows/release-sqlite-sink.yml) shows the
+build → checksums → smoke-test → release pipeline.
+
 #### Processor Requirements
 
 **All Processors:**

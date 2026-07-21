@@ -64,3 +64,4 @@ processors/trade-extractor/trade-extractor
 processors/ttl-tracker/ttl-tracker
 processors/usdc-filter/usdc-filter
 processors/webhook-sink/webhook-sink
+processors/sqlite-sink/dist/
