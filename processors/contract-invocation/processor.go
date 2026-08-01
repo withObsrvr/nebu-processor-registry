@@ -143,14 +143,21 @@ func (o *Origin) processContractInvocation(
 		return nil, err
 	}
 
-	// Determine if invocation was successful
+	// Determine if invocation was successful.
+	//
+	// Use the SDK helper rather than reaching into tx.Result.Result.Result.Results
+	// directly. On a fee-bump transaction the outer result carries no operation
+	// results; they live under InnerResultPair, which OperationResults() unwraps.
+	// The direct walk fell through every guard on those transactions and left
+	// successful at its false zero value. Soroban traffic is heavily fee-bumped,
+	// so this reported false for roughly 96% of invocations inside transactions
+	// that in fact succeeded, while meta.InSuccessfulTx a few lines below stayed
+	// correct because it goes through tx.Result.Successful().
 	successful := false
-	if tx.Result.Result.Result.Results != nil {
-		if results := *tx.Result.Result.Result.Results; len(results) > opIndex {
-			if result := results[opIndex]; result.Tr != nil {
-				if invokeResult, ok := result.Tr.GetInvokeHostFunctionResult(); ok {
-					successful = invokeResult.Code == xdr.InvokeHostFunctionResultCodeInvokeHostFunctionSuccess
-				}
+	if results, ok := tx.Result.OperationResults(); ok && len(results) > opIndex {
+		if result := results[opIndex]; result.Tr != nil {
+			if invokeResult, ok := result.Tr.GetInvokeHostFunctionResult(); ok {
+				successful = invokeResult.Code == xdr.InvokeHostFunctionResultCodeInvokeHostFunctionSuccess
 			}
 		}
 	}
@@ -190,8 +197,10 @@ func (o *Origin) processContractInvocation(
 	// Extract diagnostic events
 	invocation.DiagnosticEvents = o.extractDiagnosticEvents(tx)
 
-	// Extract contract calls
-	invocation.ContractCalls = o.extractContractCalls(tx, opIndex, invokeHostFunction, contractID)
+	// Extract contract calls. The authorization tree records what the submitter
+	// authorised, not what executed, so each edge inherits the outcome of the
+	// invocation that carried it.
+	invocation.ContractCalls = o.extractContractCalls(tx, opIndex, invokeHostFunction, contractID, successful)
 
 	// Extract state changes
 	invocation.StateChanges = o.extractStateChanges(tx)
@@ -212,21 +221,36 @@ func (o *Origin) extractDiagnosticEvents(tx ingest.LedgerTransaction) []*cipb.Di
 	}
 
 	for _, diagEvent := range diagnosticEvents {
-		if diagEvent.Event.ContractId == nil {
-			continue
-		}
-
-		contractID, err := EncodeContractID(diagEvent.Event.ContractId)
-		if err != nil {
-			continue
-		}
-
 		// Decode topics
 		var topics []string
 		if diagEvent.Event.Body.V == 0 && diagEvent.Event.Body.V0 != nil {
 			for _, topic := range diagEvent.Event.Body.V0.Topics {
 				topics = append(topics, ConvertScValToString(topic))
 			}
+		}
+
+		// A nil ContractId means the emitter is not a contract. Two kinds of
+		// event arrive that way and they are not equivalent:
+		//
+		//   * the root fn_call of an invocation, emitted by the invoking account,
+		//     and host_fn_failed. Dropping these removed the account -> first
+		//     contract edge from every invocation, leaving every invocation with
+		//     one more fn_return than fn_call and no way to balance the call
+		//     stack. These are kept, with an empty ContractId; attribute them to
+		//     ContractInvocation.InvokingAccount.
+		//   * core_metrics, the host's per-invocation resource telemetry. There
+		//     are ~19 of these per invocation and they carry no call-graph
+		//     signal. Admitting them took total event volume 7x (23,068 ->
+		//     162,401 over mainnet 63000000-63000040). These stay dropped.
+		contractID := ""
+		if diagEvent.Event.ContractId != nil {
+			encoded, err := EncodeContractID(diagEvent.Event.ContractId)
+			if err != nil {
+				continue
+			}
+			contractID = encoded
+		} else if isHostTelemetry(topics) {
+			continue
 		}
 
 		// Decode data
@@ -247,11 +271,16 @@ func (o *Origin) extractDiagnosticEvents(tx ingest.LedgerTransaction) []*cipb.Di
 	return events
 }
 
+// extractContractCalls walks the authorization tree of each SorobanAuthorizationEntry
+// on the operation. Every edge it returns is an authorization the submitter
+// declared, not a call observed executing, so applied carries the outcome of the
+// enclosing invocation down to each edge.
 func (o *Origin) extractContractCalls(
 	tx ingest.LedgerTransaction,
 	opIndex int,
 	invokeOp xdr.InvokeHostFunctionOp,
 	mainContract string,
+	applied bool,
 ) []*cipb.ContractCall {
 	var calls []*cipb.ContractCall
 
@@ -270,6 +299,7 @@ func (o *Origin) extractContractCalls(
 			0,
 			authType,
 			&executionOrder,
+			applied,
 		)
 	}
 
@@ -283,6 +313,7 @@ func (o *Origin) processAuthorizationTree(
 	depth int,
 	authType string,
 	executionOrder *int,
+	applied bool,
 ) {
 	if invocation == nil {
 		return
@@ -313,13 +344,18 @@ func (o *Origin) processAuthorizationTree(
 	// Record the call if we have both from and to contracts (skip self-calls)
 	if fromContract != "" && contractID != "" && fromContract != contractID {
 		*calls = append(*calls, &cipb.ContractCall{
-			FromContract:   fromContract,
-			ToContract:     contractID,
-			Function:       functionName,
-			Arguments:      args,
-			CallDepth:      uint32(depth),
-			AuthType:       authType,
-			Successful:     true,
+			FromContract: fromContract,
+			ToContract:   contractID,
+			Function:     functionName,
+			Arguments:    args,
+			CallDepth:    uint32(depth),
+			AuthType:     authType,
+			// An authorization entry has no execution outcome of its own; it is a
+			// declaration. This reports whether the invocation carrying it was
+			// applied, so an edge inside a failed operation no longer claims
+			// success. It does NOT mean this particular sub-call executed:
+			// authorised invocations can go unused.
+			Successful:     applied,
 			ExecutionOrder: uint32(*executionOrder),
 		})
 		*executionOrder++
@@ -334,6 +370,7 @@ func (o *Origin) processAuthorizationTree(
 			depth+1,
 			authType,
 			executionOrder,
+			applied,
 		)
 	}
 }

@@ -15,6 +15,7 @@ import (
 	token_transfer_processor "github.com/withObsrvr/nebu-processor-registry/processors/token-transfer"
 	ttpb "github.com/withObsrvr/nebu-processor-registry/processors/token-transfer/proto"
 	"github.com/withObsrvr/nebu/pkg/processor/cli"
+	"github.com/withObsrvr/nebu/pkg/runtime"
 )
 
 var version = "0.3.0"
@@ -25,6 +26,9 @@ func main() {
 		Description: "Stream token transfer events from Stellar ledgers (transfers, mints, burns, clawbacks, fees)",
 		Version:     version,
 		SchemaID:    "nebu.token_transfer.v1",
+		Hooks: []runtime.Hooks{
+			progressHook(),
+		},
 	}
 
 	cli.RunProtoOriginCLI(config, func(networkPass string) cli.ProtoOriginProcessor[*ttpb.TokenTransferEvent] {

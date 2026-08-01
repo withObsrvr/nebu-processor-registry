@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/stellar/go-stellar-sdk/ingest/sac"
 	"github.com/stellar/go-stellar-sdk/strkey"
@@ -231,4 +232,15 @@ func DescribeContractDataKey(contractData xdr.ContractDataEntry, passphrase stri
 	}
 
 	return ConvertScValToString(contractData.Key)
+}
+
+// isHostTelemetry reports whether a contract-less diagnostic event is the host's
+// own resource accounting rather than something on the call path. Topics arrive
+// from ConvertScValToString, which renders symbols quoted, so the comparison is
+// made on the unquoted value.
+func isHostTelemetry(topics []string) bool {
+	if len(topics) == 0 {
+		return false
+	}
+	return strings.Trim(topics[0], `"`) == "core_metrics"
 }
