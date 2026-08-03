@@ -5,7 +5,7 @@ go 1.25.4
 require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
-	github.com/withObsrvr/nebu v0.6.8
+	github.com/withObsrvr/nebu v0.6.12
 )
 
 require (

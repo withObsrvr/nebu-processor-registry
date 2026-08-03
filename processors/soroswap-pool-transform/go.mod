@@ -2,7 +2,7 @@ module github.com/withObsrvr/nebu-processor-registry/processors/soroswap-pool-tr
 
 go 1.25.4
 
-require github.com/withObsrvr/nebu v0.6.8
+require github.com/withObsrvr/nebu v0.6.12
 
 require (
 	github.com/klauspost/compress v1.18.5 // indirect

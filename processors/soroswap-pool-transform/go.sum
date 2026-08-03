@@ -22,8 +22,8 @@ github.com/stellar/go-xdr v0.0.0-20260529210834-0bf8f4956364 h1:gOKrfuWdZ92LFlv0
 github.com/stellar/go-xdr v0.0.0-20260529210834-0bf8f4956364/go.mod h1:If+U9Z1W5xU97VrOgJandQT+2dN7/iOpkCrxBJEyF80=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/withObsrvr/nebu v0.6.8 h1:oC4rqT6uFiDnW0IzqWY1liDnq7TKjejkPhhksSaN2xQ=
-github.com/withObsrvr/nebu v0.6.8/go.mod h1:JxeLVVAgf1uQiK0qpz8LMbRiclXosjCh5GA0xNDLnn0=
+github.com/withObsrvr/nebu v0.6.12 h1:ZAwxWrLlSLnk6QYmqts1NijdwvgPs2o7m25sJPP3EYQ=
+github.com/withObsrvr/nebu v0.6.12/go.mod h1:K4vt1qMKP4pGkxxwJq/n9rAKFjONo6xaNBAfHLDwBAA=
 github.com/xdrpp/goxdr v0.1.1 h1:E1B2c6E8eYhOVyd7yEpOyopzTPirUeF6mVOfXfGyJyc=
 github.com/xdrpp/goxdr v0.1.1/go.mod h1:dXo1scL/l6s7iME1gxHWo2XCppbHEKZS7m/KyYWkNzA=
 golang.org/x/net v0.53.0 h1:d+qAbo5L0orcWAr0a9JweQpjXF19LMXJE8Ey7hwOdUA=

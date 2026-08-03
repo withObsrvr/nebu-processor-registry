@@ -13,11 +13,11 @@ Store nebu events in PostgreSQL with JSONB schema and automatic idempotency.
 ## Installation
 
 ```bash
-# Install from nebu repo
+# Install from the registry
 nebu install postgres-sink
 
 # Or build manually
-go install github.com/withObsrvr/nebu/examples/processors/postgres-sink/cmd/postgres-sink@latest
+go install github.com/withObsrvr/nebu-processor-registry/processors/postgres-sink/cmd/postgres-sink@latest
 ```
 
 ## Quick Start
