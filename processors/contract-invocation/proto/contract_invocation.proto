@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package nebu.contract_invocation;
 
-option go_package = "github.com/withObsrvr/nebu/examples/processors/contract-invocation/proto;cipb";
+option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/contract-invocation/proto;cipb";
 
 // ContractInvocation represents a contract invocation event
 message ContractInvocation {

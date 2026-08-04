@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.0
 // - protoc             v6.32.1
-// source: examples/processors/token-transfer/proto/token_transfer_service.proto
+// source: proto/token_transfer_service.proto
 
 package ttpb
 
@@ -128,5 +128,5 @@ var TokenTransferService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "examples/processors/token-transfer/proto/token_transfer_service.proto",
+	Metadata: "proto/token_transfer_service.proto",
 }
