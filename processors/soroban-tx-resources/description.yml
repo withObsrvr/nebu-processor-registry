@@ -54,7 +54,7 @@ docs:
 
     # Save the fact stream for DuckDB analysis
     soroban-tx-resources --start-ledger 60200000 --end-ledger 60201000 -q | \
-      json-file-sink --file tx-resources.jsonl
+      json-file-sink --out tx-resources.jsonl
 
   extended_description: |
     Emits one record per transaction in a ledger's transaction set, in apply

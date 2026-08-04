@@ -51,7 +51,7 @@ docs:
 
     # Save the fact stream for DuckDB analysis
     ledger-change-stats --start-ledger 60200000 --end-ledger 60201000 -q | \
-      json-file-sink --file ledger-changes.jsonl
+      json-file-sink --out ledger-changes.jsonl
 
   extended_description: |
     Emits one record per ledger counting every ledger entry change, split three

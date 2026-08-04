@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -187,9 +188,11 @@ var evictionMetaVersions = map[int32]bool{1: true, 2: true}
 // cannot say".
 func (o *Origin) countEvictions(ctx context.Context, ledger xdr.LedgerCloseMeta, event *LedgerChangeStats) {
 	if !evictionMetaVersions[ledger.V] {
-		processor.ReportWarning(ctx, o.Name(), fmt.Errorf(
-			"ledger %d: LedgerCloseMeta v%d does not report evicted keys",
-			ledger.LedgerSequence(), ledger.V))
+		// Deliberately silent. A meta version that predates eviction is an
+		// expected property of older ledgers, not a fault, and warning here
+		// would emit one line per ledger for the whole of a historical
+		// backfill. eviction_available already tells consumers this ledger
+		// cannot answer the question.
 		return
 	}
 
@@ -225,14 +228,29 @@ func evictedByType(keys []xdr.LedgerKey) []*EntryTypeCount {
 			delete(counts, entryType)
 		}
 	}
-	// Any entry type the protocol adds later still gets reported.
-	for entryType, count := range counts {
+	// Any entry type the protocol adds later still gets reported, sorted by
+	// enum value. Ranging the map directly would reintroduce nondeterminism
+	// through the back door on exactly the ledgers where a new entry type
+	// first appears.
+	for _, entryType := range sortedEntryTypeKeys(counts) {
 		ordered = append(ordered, &EntryTypeCount{
 			EntryType: canonicalEntryType(entryType),
-			Count:     count,
+			Count:     counts[entryType],
 		})
 	}
 	return ordered
+}
+
+// sortedEntryTypeKeys returns the map's keys ordered by their numeric enum
+// value. Used for entry types the protocol has added since entryTypeOrder was
+// written, so their output position is still stable across runs.
+func sortedEntryTypeKeys[T any](m map[xdr.LedgerEntryType]T) []xdr.LedgerEntryType {
+	types := make([]xdr.LedgerEntryType, 0, len(m))
+	for entryType := range m {
+		types = append(types, entryType)
+	}
+	slices.Sort(types)
+	return types
 }
 
 func orderedEntryTypes(byType map[xdr.LedgerEntryType]*EntryTypeChangeCounts) []*EntryTypeChangeCounts {
@@ -248,9 +266,10 @@ func orderedEntryTypes(byType map[xdr.LedgerEntryType]*EntryTypeChangeCounts) []
 			delete(remaining, entryType)
 		}
 	}
-	// Entry types added by a future protocol are appended rather than dropped.
-	for _, counts := range remaining {
-		ordered = append(ordered, counts)
+	// Entry types added by a future protocol are appended rather than dropped,
+	// sorted by enum value so their position is stable across runs.
+	for _, entryType := range sortedEntryTypeKeys(remaining) {
+		ordered = append(ordered, remaining[entryType])
 	}
 	return ordered
 }

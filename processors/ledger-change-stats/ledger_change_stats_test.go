@@ -1,11 +1,58 @@
 package ledger_change_stats
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/xdr"
 )
+
+// Entry types the protocol adds after entryTypeOrder was written fall through
+// to a fallback path. That path used to range a map directly, so output order
+// varied run to run on exactly the ledgers where a new type first appears.
+func TestUnknownEntryTypesOrderDeterministically(t *testing.T) {
+	build := func() []string {
+		acc := newChangeAccumulator(100, 0)
+		// Two hypothetical future types, added high-then-low on purpose.
+		acc.add(change(xdr.LedgerEntryType(98), xdr.LedgerEntryChangeTypeLedgerEntryUpdated, ingest.LedgerEntryChangeReasonOperation))
+		acc.add(change(xdr.LedgerEntryType(97), xdr.LedgerEntryChangeTypeLedgerEntryUpdated, ingest.LedgerEntryChangeReasonOperation))
+		acc.add(change(xdr.LedgerEntryTypeAccount, xdr.LedgerEntryChangeTypeLedgerEntryUpdated, ingest.LedgerEntryChangeReasonOperation))
+
+		names := make([]string, 0, 3)
+		for _, counts := range acc.finish().EntryTypes {
+			names = append(names, counts.EntryType)
+		}
+		return names
+	}
+
+	// Known types first in enum order, then unknown ones by enum value.
+	want := []string{"account", "unknown_97", "unknown_98"}
+	for run := range 30 {
+		if got := build(); !slices.Equal(got, want) {
+			t.Fatalf("run %d: order = %v, want %v", run, got, want)
+		}
+	}
+}
+
+func TestEvictedUnknownTypesOrderDeterministically(t *testing.T) {
+	keys := []xdr.LedgerKey{
+		{Type: xdr.LedgerEntryType(98)},
+		{Type: xdr.LedgerEntryTypeContractData},
+		{Type: xdr.LedgerEntryType(97)},
+	}
+
+	want := []string{"contract_data", "unknown_97", "unknown_98"}
+	for run := range 30 {
+		got := make([]string, 0, 3)
+		for _, c := range evictedByType(keys) {
+			got = append(got, c.EntryType)
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("run %d: order = %v, want %v", run, got, want)
+		}
+	}
+}
 
 func change(entryType xdr.LedgerEntryType, changeType xdr.LedgerEntryChangeType, reason ingest.LedgerEntryChangeReason) ingest.Change {
 	return ingest.Change{Type: entryType, ChangeType: changeType, Reason: reason}
