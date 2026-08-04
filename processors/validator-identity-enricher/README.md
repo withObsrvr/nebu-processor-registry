@@ -23,8 +23,8 @@ go build -o validator-identity-enricher ./cmd/validator-identity-enricher
 ./validator-identity-enricher --describe-json | jq .
 ```
 
-The processor uses `github.com/stellar/go-stellar-sdk v0.7.0` for Stellar
-public-key and network validation and `github.com/withObsrvr/nebu v0.6.12` for
+The processor uses `github.com/stellar/go-stellar-sdk v0.7.1` for Stellar
+public-key and network validation and `github.com/withObsrvr/nebu v0.6.13` for
 the standard transform CLI.
 
 ## Live Radar enrichment

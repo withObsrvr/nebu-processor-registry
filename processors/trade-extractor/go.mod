@@ -5,8 +5,8 @@ go 1.25.4
 require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
-	github.com/stellar/go-stellar-sdk v0.7.0
-	github.com/withObsrvr/nebu v0.6.12
+	github.com/stellar/go-stellar-sdk v0.7.1
+	github.com/withObsrvr/nebu v0.6.13
 )
 
 require (
