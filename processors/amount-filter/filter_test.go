@@ -38,6 +38,63 @@ func TestFilterEvent(t *testing.T) {
 			want: true,
 		},
 		{
+			// token-transfer emits native as the flat assetCode "XLM", so
+			// --asset native must still match it.
+			name:   "flat native matches --asset native",
+			filter: NewFilter(0, 0, "native"),
+			event: map[string]interface{}{
+				"transfer": map[string]interface{}{"amount": "150", "assetCode": "XLM"},
+			},
+			want: true,
+		},
+		{
+			name:   "flat native matches --asset XLM",
+			filter: NewFilter(0, 0, "XLM"),
+			event: map[string]interface{}{
+				"transfer": map[string]interface{}{"amount": "150", "assetCode": "XLM"},
+			},
+			want: true,
+		},
+		{
+			name:   "native alias does not match an issued asset",
+			filter: NewFilter(0, 0, "native"),
+			event: map[string]interface{}{
+				"transfer": map[string]interface{}{"amount": "150", "assetCode": "USDC"},
+			},
+		},
+		{
+			name:   "nested native matches --asset native",
+			filter: NewFilter(0, 0, "native"),
+			event: map[string]interface{}{
+				"transfer": map[string]interface{}{
+					"amount": "150",
+					"asset":  map[string]interface{}{"native": true},
+				},
+			},
+			want: true,
+		},
+		{
+			name:   "nested native matches --asset XLM",
+			filter: NewFilter(0, 0, "XLM"),
+			event: map[string]interface{}{
+				"transfer": map[string]interface{}{
+					"amount": "150",
+					"asset":  map[string]interface{}{"native": true},
+				},
+			},
+			want: true,
+		},
+		{
+			name:   "nested native is dropped for an issued-asset filter",
+			filter: NewFilter(0, 0, "USDC"),
+			event: map[string]interface{}{
+				"transfer": map[string]interface{}{
+					"amount": "150",
+					"asset":  map[string]interface{}{"native": true},
+				},
+			},
+		},
+		{
 			name:   "below minimum is dropped",
 			filter: NewFilter(151, 0, ""),
 			event: map[string]interface{}{

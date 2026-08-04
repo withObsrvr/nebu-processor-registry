@@ -80,7 +80,15 @@ case "$LANGUAGE" in
             exit 0
         fi
 
-        if ! jq -r '.scripts.test // ""' "$PROCESSOR_DIR/package.json" 2>/dev/null | grep -q '[^[:space:]]'; then
+        # Capture jq's status separately from its output: an unparseable
+        # package.json must fail loudly rather than look like "no test script".
+        if ! TEST_SCRIPT=$(jq -r '.scripts.test // ""' "$PROCESSOR_DIR/package.json" 2>&1); then
+            echo "❌ Error: could not parse $PROCESSOR_DIR/package.json"
+            echo "$TEST_SCRIPT" | sed 's/^/    /'
+            exit 1
+        fi
+
+        if [ -z "$(printf '%s' "$TEST_SCRIPT" | tr -d '[:space:]')" ]; then
             echo "⚠️  No 'test' script in package.json — nothing to run"
             echo ""
             echo "✅ Processor test validation passed: $PROCESSOR_NAME (no tests)"
