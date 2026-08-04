@@ -44,8 +44,16 @@ type LedgerChangeStats struct {
 	// invisible.
 	LedgerEntriesRestored uint32 `protobuf:"varint,6,opt,name=ledger_entries_restored,json=ledgerEntriesRestored,proto3" json:"ledger_entries_restored,omitempty"`
 	// State snapshots. These are not mutations; they record an entry's value
-	// before a transaction observed it. Counted separately so they never inflate
-	// a "how much changed" figure.
+	// before a transaction observed it.
+	//
+	// IN PRACTICE THIS IS ALWAYS ZERO. The ingest change reader elides state
+	// entries (`case LedgerEntryChangeTypeLedgerEntryState: continue` in
+	// GetChangesFromLedgerEntryChanges), so none ever reach this processor. Do
+	// not build on this field.
+	//
+	// The counter is kept so that every change type lands in exactly one bucket
+	// and the five sum to total_changes. Dropping it would leave a silent hole if
+	// a future reader starts emitting state entries.
 	LedgerEntriesState uint32 `protobuf:"varint,7,opt,name=ledger_entries_state,json=ledgerEntriesState,proto3" json:"ledger_entries_state,omitempty"`
 	// Sum of every change seen, state entries included.
 	TotalChanges            uint32 `protobuf:"varint,8,opt,name=total_changes,json=totalChanges,proto3" json:"total_changes,omitempty"`

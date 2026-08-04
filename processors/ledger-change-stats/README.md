@@ -83,7 +83,7 @@ ORDER BY 1
 |---|---|
 | `ledgerSequence`, `closedAtUnix` | Ledger identity and close time |
 | `ledgerEntriesCreated` / `Updated` / `Deleted` / `Restored` | Mutations by change type |
-| `ledgerEntriesState` | State snapshots — **not** mutations |
+| `ledgerEntriesState` | State snapshots — **not** mutations. **Always zero in practice**; the ingest change reader elides state entries before this processor sees them. Kept so the five change-type buckets sum to `totalChanges`. Do not build on it |
 | `totalChanges` | Every change seen, state included |
 | `feeRelatedChanges`, `feeRefundRelatedChanges`, `txRelatedChanges`, `operationRelatedChanges`, `upgradeRelatedChanges`, `unknownReasonChanges` | Changes by reason; these sum to `totalChanges` |
 | `entryTypes[]` | Per-entry-type `{created, updated, deleted, restored, state, total}`. Only types that saw a change appear, ordered by the XDR enum |
@@ -95,9 +95,60 @@ Ordering of both per-type lists follows the XDR enum rather than map iteration, 
 
 ## Verification status
 
-Counts and the entry-type split are verified against live mainnet (ledgers 60200000–60200060).
+Every field is verified against live chain data.
 
-**Restores and evictions were zero across that whole range**, so those two paths are not confirmed against real data here — the range contains no `RestoreFootprint` operations at all, which is why. Both branches are covered by unit tests over constructed changes instead. Treat the live behaviour of `ledgerEntriesRestored` and `evictedKeys` as untested until someone runs this over a range known to contain archival activity.
+**Counts and entry-type split** — mainnet 60200000–60200060.
+
+**Evictions** — mainnet 61500000–61500099, which sits inside a bulk eviction sweep: exactly 2,000 per ledger, split 1,000 `contract_data` + 1,000 `ttl`. The 1:1 entry-to-TTL pairing is the internal check that the number is real, and the flat 2,000 is the per-ledger eviction cap. Testnet evicts more naturally, 4–56 per ledger on most ledgers.
+
+**Restores** — verified on both networks.
+
+Mainnet, in the 1,200 ledgers immediately following the 61.5M eviction sweep:
+
+| ledger | restored | breakdown |
+|---|---|---|
+| 61500126 | 22 | `contract_data` 11 + `ttl` 11 |
+| 61500233 | 2 | `contract_data` 1 + `ttl` 1 |
+| 61500252 | 2 | `contract_data` 1 + `ttl` 1 |
+| 61500320 | 2 | `contract_data` 1 + `ttl` 1 |
+| 61501156 | 4 | `contract_data` 2 + `ttl` 2 |
+
+Testnet: 3966108, 3966250, 3966310, 3966376, 3950232, 3950254, 3950256. Ledger 3966108 restored 4 — `contract_data` 1 + `contract_code` 1 + `ttl` 2.
+
+In every case the TTL count equals the number of non-TTL entries restored, because restoring an entry restores its TTL alongside it. That pairing is the internal check that the counts are real.
+
+**Restores cluster after evictions.** They were absent from every range sampled away from archival activity, and appeared immediately after the 61.5M sweep — entries evicted to the hot archive being pulled back by contracts that still needed them. Sample near an eviction sweep, not at random.
+
+### Restores do not come from RestoreFootprintOp
+
+Worth knowing before anyone writes a detector for this.
+
+Ledger 3966108 contains **no `RestoreFootprintOp`** — its operations are 15 × `op_INVOKE_HOST_FUNCTION_SUCCESS`, 3 × `op_MANAGE_SELL_OFFER_SUCCESS`, 2 × `op_SET_TRUST_LINE_FLAGS_SUCCESS`. Under [CAP-0062](https://github.com/stellar/stellar-protocol/blob/master/core/cap-0062.md), archived entries in a transaction's readWrite footprint are restored automatically during `InvokeHostFunction`, emitting `LedgerEntryRestored` changes with no dedicated operation.
+
+Scanning operation result codes for `RESTORE` therefore finds nothing even on ledgers that restored entries — confirmed across ~5,400 mainnet and 1,400 testnet ledgers, zero hits, while the change stream shows restores on both networks in the ledgers tabled above. **Detect restores from the change stream, never from operation codes.**
+
+### Reproducing
+
+Mainnet, just after the eviction sweep:
+
+```bash
+ledger-change-stats --start-ledger 61500100 --end-ledger 61501299 -q \
+  | jq -c 'select(.ledgerEntriesRestored > 0)
+           | {ledger: .ledgerSequence, restored: .ledgerEntriesRestored,
+              types: [.entryTypes[] | select(.restored > 0)]}'
+```
+
+Testnet:
+
+```bash
+ledger-change-stats \
+  --rpc-url "https://soroban-testnet.stellar.org" \
+  --network "Test SDF Network ; September 2015" \
+  --start-ledger 3966000 --end-ledger 3966599 -q \
+  | jq -c 'select(.ledgerEntriesRestored > 0) | {ledger: .ledgerSequence, restored: .ledgerEntriesRestored}'
+```
+
+Restores are sparse — roughly 5 ledgers per 1,200 even in an active region — so a short sample proves nothing. Watch stderr: both public RPCs return HTTP 429 above about two concurrent scanners, and a rate-limited run exits early and looks exactly like a clean run that found nothing.
 
 ## Configuration
 

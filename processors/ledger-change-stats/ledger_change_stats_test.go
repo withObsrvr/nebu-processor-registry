@@ -46,6 +46,37 @@ func TestAccumulatorCountsEveryChangeType(t *testing.T) {
 	}
 }
 
+// Every change type must land in exactly one bucket, so the five sum to
+// totalChanges. This is what justifies keeping the state counter even though
+// the ingest reader elides state entries: without it, a change counted in the
+// total would belong to no bucket.
+func TestChangeTypeBucketsSumToTotal(t *testing.T) {
+	acc := newChangeAccumulator(100, 0)
+
+	types := []xdr.LedgerEntryChangeType{
+		xdr.LedgerEntryChangeTypeLedgerEntryCreated,
+		xdr.LedgerEntryChangeTypeLedgerEntryUpdated,
+		xdr.LedgerEntryChangeTypeLedgerEntryRemoved,
+		xdr.LedgerEntryChangeTypeLedgerEntryRestored,
+		xdr.LedgerEntryChangeTypeLedgerEntryState,
+	}
+	for i, changeType := range types {
+		for range i + 1 {
+			acc.add(change(xdr.LedgerEntryTypeContractData, changeType, ingest.LedgerEntryChangeReasonOperation))
+		}
+	}
+
+	event := acc.finish()
+	sum := event.LedgerEntriesCreated + event.LedgerEntriesUpdated + event.LedgerEntriesDeleted +
+		event.LedgerEntriesRestored + event.LedgerEntriesState
+	if sum != event.TotalChanges {
+		t.Errorf("change-type buckets sum to %d but totalChanges = %d", sum, event.TotalChanges)
+	}
+	if event.TotalChanges != 15 {
+		t.Errorf("totalChanges = %d, want 15", event.TotalChanges)
+	}
+}
+
 // State snapshots are not mutations and must never inflate a "how much changed"
 // figure derived from created+updated+deleted.
 func TestStateChangesExcludedFromMutationTotals(t *testing.T) {
