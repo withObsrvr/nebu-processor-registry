@@ -20,8 +20,11 @@ Each emitted event includes raw creation facts plus family discovery fields:
 - `deployer`
 - `preimageAddress`
 - `saltHex`
-- `executableType`
-- `wasmHash`
+- `executableType` — `wasm`, `stellar_asset`, or `external_ref`
+- `wasmHash` — set for `wasm` executables
+- `externalRefOwner` / `externalRefTag` — set for `external_ref` executables
+  (CAP-0085, Protocol 28), which have no wasm hash and are instead named by
+  the owner address plus tag that identify the off-ledger executable
 - `createHostFunctionType`
 - `constructorInvoked`
 - `constructorName`

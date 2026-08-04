@@ -132,19 +132,30 @@ func (o *Origin) buildContractCreatedEvent(
 		PreimageAddress:        createDetails.PreimageAddress,
 		WasmHash:               createDetails.WasmHash,
 		ExecutableType:         createDetails.ExecutableType,
+		ExternalRefOwner:       createDetails.ExternalRefOwner,
+		ExternalRefTag:         createDetails.ExternalRefTag,
 		CreateHostFunctionType: createDetails.HostFunctionType,
 		ConstructorName:        createDetails.ConstructorName,
 		ConstructorArgs:        createDetails.ConstructorArgs,
 		InitializedState:       initializedState,
 		TTLToLedger:            ttlExtendedTo,
 	}
-	if profile, ok := o.profiles[createDetails.WasmHash]; ok {
+	// Family profiles are keyed by executable so repeat deployments of the same
+	// code inherit an earlier classification. Wasm keys on the hash; CAP-0085
+	// external-ref contracts have no hash and key on owner+tag instead.
+	execKey := executableInfo{
+		Type:     createDetails.ExecutableType,
+		WasmHash: createDetails.WasmHash,
+		Owner:    createDetails.ExternalRefOwner,
+		Tag:      createDetails.ExternalRefTag,
+	}.key()
+	if profile, ok := o.profiles[execKey]; ok && execKey != "" {
 		candidate.KnownFamilyHints = append(candidate.KnownFamilyHints, profile.Family)
 		candidate.KnownTags = append(candidate.KnownTags, profile.Tags...)
 	}
 	classification := o.engine.Classify(candidate)
-	if createDetails.WasmHash != "" && classification.Family != "generic_contract" {
-		o.profiles[createDetails.WasmHash] = &familyProfile{Family: classification.Family, Tags: classification.Tags}
+	if execKey != "" && classification.Family != "generic_contract" {
+		o.profiles[execKey] = &familyProfile{Family: classification.Family, Tags: classification.Tags}
 	}
 	familyCandidates := make([]*FamilyCandidate, 0, len(classification.Candidates))
 	for _, c := range classification.Candidates {
@@ -172,6 +183,8 @@ func (o *Origin) buildContractCreatedEvent(
 		SaltHex:                 createDetails.SaltHex,
 		ExecutableType:          createDetails.ExecutableType,
 		WasmHash:                createDetails.WasmHash,
+		ExternalRefOwner:        createDetails.ExternalRefOwner,
+		ExternalRefTag:          createDetails.ExternalRefTag,
 		CreateHostFunctionType:  createDetails.HostFunctionType,
 		ConstructorInvoked:      createDetails.ConstructorInvoked,
 		ConstructorName:         createDetails.ConstructorName,
@@ -195,10 +208,20 @@ type createContractDetails struct {
 	SaltHex            string
 	ExecutableType     string
 	WasmHash           string
+	ExternalRefOwner   string
+	ExternalRefTag     string
 	HostFunctionType   string
 	ConstructorInvoked bool
 	ConstructorName    string
 	ConstructorArgs    []string
+}
+
+// setExecutable copies a decoded executable onto the details record.
+func (d *createContractDetails) setExecutable(info executableInfo) {
+	d.ExecutableType = info.Type
+	d.WasmHash = info.WasmHash
+	d.ExternalRefOwner = info.Owner
+	d.ExternalRefTag = info.Tag
 }
 
 func extractCreateDetails(passphrase string, tx ingest.LedgerTransaction, invoke xdr.InvokeHostFunctionOp) (createContractDetails, bool) {
@@ -211,13 +234,13 @@ func extractCreateDetails(passphrase string, tx ingest.LedgerTransaction, invoke
 		args := hf.MustCreateContract()
 		details.ContractID = deriveContractID(passphrase, args.ContractIdPreimage)
 		details.PreimageAddress, details.SaltHex = preimageAddressAndSalt(args.ContractIdPreimage)
-		details.ExecutableType, details.WasmHash = executableDetails(args.Executable)
+		details.setExecutable(executableDetails(args.Executable))
 	case xdr.HostFunctionTypeHostFunctionTypeCreateContractV2:
 		details.HostFunctionType = "create_contract_v2"
 		args := hf.MustCreateContractV2()
 		details.ContractID = deriveContractID(passphrase, args.ContractIdPreimage)
 		details.PreimageAddress, details.SaltHex = preimageAddressAndSalt(args.ContractIdPreimage)
-		details.ExecutableType, details.WasmHash = executableDetails(args.Executable)
+		details.setExecutable(executableDetails(args.Executable))
 		details.ConstructorInvoked = true
 		for _, arg := range args.ConstructorArgs {
 			details.ConstructorArgs = append(details.ConstructorArgs, scValToString(arg))
@@ -285,7 +308,7 @@ func collectContractCreationState(changes []ingest.Change, contractID string, in
 			if entry.Val.Type == xdr.ScValTypeScvContractInstance {
 				instance := entry.Val.MustInstance()
 				if wasmHash == "" {
-					_, wasmHash = executableDetails(instance.Executable)
+					wasmHash = executableDetails(instance.Executable).WasmHash
 				}
 				state = append(state, expandInstanceStorageState(instance, operation, durability)...)
 			}
@@ -402,15 +425,49 @@ func preimageAddressAndSalt(preimage xdr.ContractIdPreimage) (string, string) {
 	return scAddressToString(from.Address), fmt.Sprintf("%x", from.Salt[:])
 }
 
-func executableDetails(exec xdr.ContractExecutable) (string, string) {
+// executableInfo is the emitted form of a ContractExecutable union arm.
+// Exactly one of WasmHash or (Owner, Tag) is populated, depending on Type.
+type executableInfo struct {
+	Type     string // "wasm" | "stellar_asset" | "external_ref" | lowercased enum name
+	WasmHash string // wasm only
+	Owner    string // external_ref only
+	Tag      string // external_ref only
+}
+
+// key identifies the code behind a contract, for family-profile reuse across
+// deployments. Wasm contracts share a wasm hash; external-ref contracts have
+// no hash and are identified by the owner+tag pair that names the executable.
+// Returns "" when the executable cannot be keyed (e.g. stellar_asset, whose
+// behaviour is fixed by the protocol rather than by deployed code).
+func (e executableInfo) key() string {
+	switch {
+	case e.WasmHash != "":
+		return e.WasmHash
+	case e.Type == "external_ref" && (e.Owner != "" || e.Tag != ""):
+		return "external_ref:" + e.Owner + ":" + e.Tag
+	default:
+		return ""
+	}
+}
+
+func executableDetails(exec xdr.ContractExecutable) executableInfo {
 	switch exec.Type {
 	case xdr.ContractExecutableTypeContractExecutableWasm:
 		wasmHash := exec.MustWasmHash()
-		return "wasm", fmt.Sprintf("%x", wasmHash[:])
+		return executableInfo{Type: "wasm", WasmHash: fmt.Sprintf("%x", wasmHash[:])}
 	case xdr.ContractExecutableTypeContractExecutableStellarAsset:
-		return "stellar_asset", ""
+		return executableInfo{Type: "stellar_asset"}
+	case xdr.ContractExecutableTypeContractExecutableExternalRef:
+		// CAP-0085 (Protocol 28): the executable lives outside the ledger and
+		// is named by an owner address plus a tag rather than a wasm hash.
+		ref := exec.MustExternalRef()
+		return executableInfo{
+			Type:  "external_ref",
+			Owner: scAddressToString(ref.ExecutableOwner),
+			Tag:   string(ref.Tag),
+		}
 	default:
-		return strings.ToLower(exec.Type.String()), ""
+		return executableInfo{Type: strings.ToLower(exec.Type.String())}
 	}
 }
 
@@ -642,11 +699,14 @@ func scValToString(val xdr.ScVal) string {
 		return "LedgerKeyNonce"
 	case xdr.ScValTypeScvContractInstance:
 		instance := val.MustInstance()
-		kind, wasmHash := executableDetails(instance.Executable)
-		if wasmHash != "" {
-			return wasmHash
+		info := executableDetails(instance.Executable)
+		// key() is the wasm hash for wasm and "external_ref:owner:tag" for
+		// CAP-0085 externals; it is empty for arms with no distinguishing
+		// payload (stellar_asset), which fall back to the bare type name.
+		if k := info.key(); k != "" {
+			return k
 		}
-		return kind
+		return info.Type
 	}
 	return val.Type.String()
 }
