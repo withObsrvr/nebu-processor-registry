@@ -132,6 +132,11 @@ mislabelled failure code is worse than an obviously unknown one.
 | `--network` | Network passphrase | Mainnet |
 | `-q, --quiet` | Suppress startup banner | false |
 
+The default is a public third-party archive. For Obsrvr's own endpoints use
+`--rpc-url https://gateway.withobsrvr.com/rpc/{mainnet,testnet}/` with
+`NEBU_RPC_AUTH="Api-Key <key>"`; they serve archive depth transparently, so the
+same URL works for both live and historical ranges.
+
 ## License
 
 MIT

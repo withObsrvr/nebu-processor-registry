@@ -129,10 +129,20 @@ Scanning operation result codes for `RESTORE` therefore finds nothing even on le
 
 ### Reproducing
 
+These ranges sit millions of ledgers behind head, so they need an endpoint that
+serves archive depth. The Obsrvr gateway does — it falls back to archive
+automatically past its retention window, so no separate archive URL is needed:
+
+```bash
+export NEBU_RPC_AUTH="Api-Key <your-obsrvr-key>"
+```
+
 Mainnet, just after the eviction sweep:
 
 ```bash
-ledger-change-stats --start-ledger 61500100 --end-ledger 61501299 -q \
+ledger-change-stats \
+  --rpc-url "https://gateway.withobsrvr.com/rpc/mainnet/" \
+  --start-ledger 61500100 --end-ledger 61501299 -q \
   | jq -c 'select(.ledgerEntriesRestored > 0)
            | {ledger: .ledgerSequence, restored: .ledgerEntriesRestored,
               types: [.entryTypes[] | select(.restored > 0)]}'
@@ -142,13 +152,23 @@ Testnet:
 
 ```bash
 ledger-change-stats \
-  --rpc-url "https://soroban-testnet.stellar.org" \
+  --rpc-url "https://gateway.withobsrvr.com/rpc/testnet/" \
   --network "Test SDF Network ; September 2015" \
   --start-ledger 3966000 --end-ledger 3966599 -q \
   | jq -c 'select(.ledgerEntriesRestored > 0) | {ledger: .ledgerSequence, restored: .ledgerEntriesRestored}'
 ```
 
-Restores are sparse — roughly 5 ledgers per 1,200 even in an active region — so a short sample proves nothing. Watch stderr: both public RPCs return HTTP 429 above about two concurrent scanners, and a rate-limited run exits early and looks exactly like a clean run that found nothing.
+Restores are sparse — roughly 5 ledgers per 1,200 even in an active region — so
+a short sample proves nothing. Budget for the scan rather than cutting it short:
+measured against the gateway, mainnet archive reads run about 2.7 ledgers/sec
+(200 ledgers in 73s), so the 1,200-ledger mainnet range above takes 7–8 minutes.
+Testnet is far faster at roughly 20 ledgers/sec.
+
+Watch stderr regardless. A run that dies partway exits early and looks exactly
+like a clean run that found nothing. The public endpoints
+(`archive-rpc.lightsail.network`, `soroban-testnet.stellar.org`) rate-limit with
+HTTP 429 above about two concurrent scanners; the gateway did not 429 across
+these ranges.
 
 ## Configuration
 
@@ -159,6 +179,11 @@ Restores are sparse — roughly 5 ledgers per 1,200 even in an active region —
 | `--rpc-url` | Stellar RPC endpoint | `https://archive-rpc.lightsail.network` |
 | `--network` | Network passphrase | Mainnet |
 | `-q, --quiet` | Suppress startup banner | false |
+
+The default is a public third-party archive. For Obsrvr's own endpoints use
+`--rpc-url https://gateway.withobsrvr.com/rpc/{mainnet,testnet}/` with
+`NEBU_RPC_AUTH="Api-Key <key>"`; they serve archive depth transparently, so the
+same URL works for both live and historical ranges.
 
 ## Related
 
