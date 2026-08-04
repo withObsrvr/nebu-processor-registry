@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package nebu.ttp;
 
-option go_package = "github.com/withObsrvr/nebu/processors/core/token_transfer/proto;ttpb";
+option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/token-transfer/proto;ttpb";
 
 // GetEventsRequest specifies a bounded range of ledgers to process.
 message GetEventsRequest {

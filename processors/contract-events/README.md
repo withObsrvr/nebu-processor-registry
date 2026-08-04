@@ -28,7 +28,7 @@ Unlike the `token-transfer` processor which focuses on SEP-41 token events, `con
 
 ```bash
 # Install globally
-go install github.com/withObsrvr/nebu/examples/processors/contract-events/cmd/contract-events@latest
+go install github.com/withObsrvr/nebu-processor-registry/processors/contract-events/cmd/contract-events@latest
 
 # Or use nebu install
 nebu install contract-events

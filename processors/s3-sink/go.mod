@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.99.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2
-	github.com/withObsrvr/nebu v0.6.8
+	github.com/withObsrvr/nebu v0.6.13
 )
 
 require (
@@ -78,7 +78,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
-	github.com/stellar/go-stellar-sdk v0.6.0 // indirect
+	github.com/stellar/go-stellar-sdk v0.7.1 // indirect
 	github.com/stellar/go-xdr v0.0.0-20260529210834-0bf8f4956364 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect

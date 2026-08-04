@@ -23,13 +23,13 @@ All processors in `registry.yaml` are currently **local** (type: `local`, path: 
 **registry.yaml structure:**
 ```yaml
 processors:
-  - name: token-transfer
+  - name: transaction-stats
     type: origin
-    description: Stream token transfer events from Stellar ledgers
+    description: Aggregate successful/failed transaction and operation counts per ledger range
     location:
       type: local
-      path: ./examples/processors/token-transfer
-      package: github.com/withObsrvr/nebu/examples/processors/token-transfer
+      path: ./examples/processors/transaction-stats
+      package: github.com/withObsrvr/nebu/examples/processors/transaction-stats
 ```
 
 ### Community Processor Registry (This Repository)

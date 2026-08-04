@@ -8,6 +8,8 @@ type Candidate struct {
 	PreimageAddress        string
 	WasmHash               string
 	ExecutableType         string
+	ExternalRefOwner       string
+	ExternalRefTag         string
 	CreateHostFunctionType string
 	ConstructorName        string
 	ConstructorArgs        []string
@@ -41,7 +43,7 @@ func (c Candidate) Values() []string {
 }
 
 func (c Candidate) JoinedLower() string {
-	parts := []string{c.ContractID, c.Deployer, c.PreimageAddress, c.WasmHash, c.ExecutableType, c.CreateHostFunctionType, c.ConstructorName}
+	parts := []string{c.ContractID, c.Deployer, c.PreimageAddress, c.WasmHash, c.ExecutableType, c.ExternalRefOwner, c.ExternalRefTag, c.CreateHostFunctionType, c.ConstructorName}
 	parts = append(parts, c.KnownFamilyHints...)
 	parts = append(parts, c.KnownTags...)
 	parts = append(parts, c.ConstructorArgs...)

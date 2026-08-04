@@ -14,14 +14,14 @@ repo:
 
 # Protocol buffer definitions
 proto:
-  source: github.com/withObsrvr/nebu/examples/processors/token-transfer/proto
+  source: github.com/withObsrvr/nebu-processor-registry/processors/token-transfer/proto
   package: token_transfer
 
 # Schema versioning
 schema:
   version: v1
   identifier: nebu.token_transfer.v1
-  documentation: https://github.com/withObsrvr/nebu/blob/main/examples/processors/token-transfer/README.md
+  documentation: https://github.com/withObsrvr/nebu-processor-registry/tree/main/processors/token-transfer
 
 docs:
   quick_start: |

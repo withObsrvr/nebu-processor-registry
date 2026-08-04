@@ -3,9 +3,9 @@ module github.com/withObsrvr/nebu-processor-registry/processors/token-transfer
 go 1.25.4
 
 require (
-	github.com/stellar/go-stellar-sdk v0.6.0
+	github.com/stellar/go-stellar-sdk v0.7.1
 	github.com/stretchr/testify v1.11.1
-	github.com/withObsrvr/nebu v0.6.8
+	github.com/withObsrvr/nebu v0.6.13
 	google.golang.org/grpc v1.80.0
 	google.golang.org/protobuf v1.36.11
 )

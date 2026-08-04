@@ -40,6 +40,12 @@ message ContractCreatedEvent {
   string wasm_hash = 7;
   string create_host_function_type = 8;
 
+  // CAP-0085 (Protocol 28) external-reference executables. Set only when
+  // executable_type is "external_ref"; such contracts have no wasm_hash and
+  // are identified by the owner address plus tag that name the executable.
+  string external_ref_owner = 22;
+  string external_ref_tag = 23;
+
   bool constructor_invoked = 9;
   string constructor_name = 10;
   repeated string constructor_args = 11;

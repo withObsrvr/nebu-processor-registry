@@ -8,7 +8,7 @@ syntax = "proto3";
 
 package contract_events;
 
-option go_package = "github.com/withObsrvr/nebu/examples/processors/contract-events";
+option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/contract-events;contract_events";
 
 // ContractEvent represents a single contract event emitted on-chain.
 message ContractEvent {

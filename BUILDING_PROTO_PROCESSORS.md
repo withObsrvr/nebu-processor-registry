@@ -60,7 +60,7 @@ amount := event.Transfer.Amount  // Type: string, never nil if field exists
 
 ### Required Tools
 
-1. **Go 1.21+**
+1. **Go 1.25+**
    ```bash
    go version
    ```
@@ -134,14 +134,14 @@ Think about what data you want to extract. For contract invocations:
 
 ### Step 2: Create Proto File
 
-Create `examples/processors/contract-invocation/proto/contract_invocation.proto`:
+Create `processors/contract-invocation/proto/contract_invocation.proto`:
 
 ```protobuf
 syntax = "proto3";
 
 package contract_invocation;
 
-option go_package = "github.com/withObsrvr/nebu/examples/processors/contract-invocation/proto";
+option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/contract-invocation/proto";
 
 // ContractInvocation represents a Soroban contract function call
 message ContractInvocation {
@@ -256,7 +256,7 @@ import (
 	"fmt"
 
 	"github.com/stellar/go-stellar-sdk/xdr"
-	"github.com/withObsrvr/nebu/examples/processors/contract-invocation/proto"
+	"github.com/withObsrvr/nebu-processor-registry/processors/contract-invocation/proto"
 	"github.com/withObsrvr/nebu/pkg/processor"
 )
 
@@ -401,8 +401,8 @@ Create `cmd/contract-invocation/main.go`:
 package main
 
 import (
-	"github.com/withObsrvr/nebu/examples/processors/contract-invocation"
-	proto "github.com/withObsrvr/nebu/examples/processors/contract-invocation/proto"
+	"github.com/withObsrvr/nebu-processor-registry/processors/contract-invocation"
+	proto "github.com/withObsrvr/nebu-processor-registry/processors/contract-invocation/proto"
 	"github.com/withObsrvr/nebu/pkg/processor/cli"
 )
 
@@ -436,7 +436,7 @@ func main() {
 
 ```bash
 # Initialize module
-go mod init github.com/withObsrvr/nebu/examples/processors/contract-invocation
+go mod init github.com/withObsrvr/nebu-processor-registry/processors/contract-invocation
 go mod tidy
 
 # Build

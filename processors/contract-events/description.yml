@@ -14,14 +14,14 @@ repo:
 
 # Protocol buffer definitions
 proto:
-  source: github.com/withObsrvr/nebu/examples/processors/contract-events/proto
+  source: github.com/withObsrvr/nebu-processor-registry/processors/contract-events
   package: contract_events
 
 # Schema versioning
 schema:
   version: v1
   identifier: nebu.contract_events.v1
-  documentation: https://github.com/withObsrvr/nebu/blob/main/examples/processors/contract-events/README.md
+  documentation: https://github.com/withObsrvr/nebu-processor-registry/blob/main/processors/contract-events/README.md
 
 docs:
   quick_start: |

@@ -41,20 +41,48 @@ jobs:
         if: steps.changed-processors.outputs.processors != ''
         run: |
           nix develop --command bash -c '
+            failed=""
             for processor in ${{ steps.changed-processors.outputs.processors }}; do
-              echo "Validating processor: $processor"
-              bash scripts/validate-processor.sh "processors/$processor"
+              echo "::group::Validating processor: $processor"
+              bash scripts/validate-processor.sh "processors/$processor" || failed="$failed $processor"
+              echo "::endgroup::"
             done
+            if [ -n "$failed" ]; then
+              echo "❌ Validation failed for:$failed"
+              exit 1
+            fi
           '
 
       - name: Build processors
         if: steps.changed-processors.outputs.processors != ''
         run: |
           nix develop --command bash -c '
+            failed=""
             for processor in ${{ steps.changed-processors.outputs.processors }}; do
-              echo "Building processor: $processor"
-              bash scripts/build-processor.sh "processors/$processor"
+              echo "::group::Building processor: $processor"
+              bash scripts/build-processor.sh "processors/$processor" || failed="$failed $processor"
+              echo "::endgroup::"
             done
+            if [ -n "$failed" ]; then
+              echo "❌ Build failed for:$failed"
+              exit 1
+            fi
+          '
+
+      - name: Test processors
+        if: steps.changed-processors.outputs.processors != ''
+        run: |
+          nix develop --command bash -c '
+            failed=""
+            for processor in ${{ steps.changed-processors.outputs.processors }}; do
+              echo "::group::Testing processor: $processor"
+              bash scripts/test-processor.sh "processors/$processor" || failed="$failed $processor"
+              echo "::endgroup::"
+            done
+            if [ -n "$failed" ]; then
+              echo "❌ Tests failed for:$failed"
+              exit 1
+            fi
           '
 
       - name: Generate processor list
@@ -69,5 +97,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '❌ Processor validation failed. Please check the workflow logs for details.'
+              body: '❌ Processor checks failed (metadata validation, build, or tests). Expand the failing step in the workflow logs — each processor is logged in its own group, and the step ends with the list of processors that failed.'
             })

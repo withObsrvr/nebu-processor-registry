@@ -14,14 +14,14 @@ repo:
 
 # Protocol buffer definitions
 proto:
-  source: github.com/withObsrvr/nebu/examples/processors/contract-invocation/proto
+  source: github.com/withObsrvr/nebu-processor-registry/processors/contract-invocation/proto
   package: contract_invocation
 
 # Schema versioning
 schema:
   version: v1
   identifier: nebu.contract_invocation.v1
-  documentation: https://github.com/withObsrvr/nebu/blob/main/examples/processors/contract-invocation/README.md
+  documentation: https://github.com/withObsrvr/nebu-processor-registry/tree/main/processors/contract-invocation
 
 docs:
   quick_start: |

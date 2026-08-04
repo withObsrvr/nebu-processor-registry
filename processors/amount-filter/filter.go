@@ -61,31 +61,51 @@ func (f *Filter) FilterEvent(event map[string]interface{}) map[string]interface{
 		return nil
 	}
 
-	// Check asset if specified
+	// Check asset if specified. Current token-transfer output uses flat
+	// assetCode/assetIssuer fields; retain support for the older nested shape.
 	if f.AssetCode != "" {
-		asset, ok := eventData["asset"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		// Check for issued asset
-		issuedAsset, ok := asset["issuedAsset"].(map[string]interface{})
-		if ok {
-			// Issued asset - check asset code
-			code, ok := issuedAsset["assetCode"].(string)
-			if !ok || code != f.AssetCode {
+		if code, ok := eventData["assetCode"].(string); ok {
+			if !assetCodeMatches(f.AssetCode, code) {
 				return nil
 			}
-		} else if nativeAsset, ok := asset["native"].(bool); ok && nativeAsset {
-			// Native asset - check if looking for native/XLM
-			if f.AssetCode != "native" && f.AssetCode != "XLM" {
+		} else if asset, ok := eventData["asset"].(map[string]interface{}); ok {
+			issuedAsset, ok := asset["issuedAsset"].(map[string]interface{})
+			if ok {
+				code, ok := issuedAsset["assetCode"].(string)
+				if !ok || code != f.AssetCode {
+					return nil
+				}
+			} else if nativeAsset, ok := asset["native"].(bool); ok && nativeAsset {
+				if !isNativeAlias(f.AssetCode) {
+					return nil
+				}
+			} else {
 				return nil
 			}
 		} else {
-			return nil // Unknown asset format
+			return nil
 		}
 	}
 
 	// Passed all filters
 	return event
+}
+
+// assetCodeMatches reports whether an emitted asset code satisfies the
+// configured filter.
+//
+// token-transfer emits native XLM as the flat assetCode "XLM", while the
+// legacy nested shape carries it as an explicit native marker that this
+// filter accepts under either "native" or "XLM". Treating the two spellings
+// as aliases keeps --asset native working across both wire shapes; without
+// it, --asset native silently drops every native transfer in the flat form.
+func assetCodeMatches(want, got string) bool {
+	if want == got {
+		return true
+	}
+	return isNativeAlias(want) && isNativeAlias(got)
+}
+
+func isNativeAlias(code string) bool {
+	return code == "native" || code == "XLM"
 }
