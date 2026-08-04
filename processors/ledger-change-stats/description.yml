@@ -1,0 +1,82 @@
+processor:
+  name: ledger-change-stats
+  type: origin
+  description: Count ledger entry changes by change type, reason, and entry type, plus evictions
+  version: 0.2.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+proto:
+  source: github.com/withObsrvr/nebu-processor-registry/processors/ledger-change-stats
+  package: ledger_change_stats
+
+schema:
+  version: v1
+  identifier: nebu.ledger_change_stats.v1
+  documentation: https://github.com/withObsrvr/nebu-processor-registry/blob/main/processors/ledger-change-stats/README.md
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install ledger-change-stats
+
+    # Extract a bounded ledger range
+    ledger-change-stats --start-ledger 60200000 --end-ledger 60200100 -q
+
+  examples: |
+    # Per-ledger change profile
+    ledger-change-stats --start-ledger 60200000 --end-ledger 60200010 -q | jq
+
+    # Entry-type breakdown for one ledger
+    ledger-change-stats --start-ledger 60200000 --end-ledger 60200000 -q | \
+      jq '.entryTypes'
+
+    # Ledgers where anything was archived or restored
+    ledger-change-stats --start-ledger 60200000 --end-ledger 60201000 -q | \
+      jq -c 'select(.evictedKeys > 0 or .ledgerEntriesRestored > 0)
+             | {ledger: .ledgerSequence, archived: .evictedKeys,
+                restored: .ledgerEntriesRestored}'
+
+    # True mutation total, excluding state snapshots
+    ledger-change-stats --start-ledger 60200000 --end-ledger 60200010 -q | \
+      jq -c '{ledger: .ledgerSequence,
+              mutations: (.ledgerEntriesCreated + .ledgerEntriesUpdated
+                          + .ledgerEntriesDeleted + .ledgerEntriesRestored)}'
+
+    # Save the fact stream for DuckDB analysis
+    ledger-change-stats --start-ledger 60200000 --end-ledger 60201000 -q | \
+      json-file-sink --file ledger-changes.jsonl
+
+  extended_description: |
+    Emits one record per ledger counting every ledger entry change, split three
+    ways: by change type (created, updated, deleted, restored, state), by the
+    reason the change occurred (fee, fee refund, transaction, operation,
+    upgrade, unknown), and by the type of entry that changed.
+
+    It walks the full change stream via the ingest change reader, so unlike
+    contract-state it sees accounts, trustlines, offers, claimable balances and
+    liquidity pools alongside contract data. On mainnet ledger 60200000,
+    contract-state would have reported 182 contract-data changes and none of
+    the other 1,794.
+
+    This is a rebuild of the nebu repo example, with four corrections. Restores
+    were previously invisible because the change type was derived from whether
+    Pre/Post were nil, which cannot distinguish a restore from a create; it is
+    now read from LedgerEntryChangeType directly. Fee-refund and upgrade
+    reasons were dropped by a three-case switch and counted toward nothing.
+    State snapshots inflated mutation counts and are now separated. Per-entry
+    type breakdowns and ledger-close evictions are new.
+
+    Ordering of the per-type lists follows the XDR enum rather than map
+    iteration, so identical input produces identical output bytes.
+
+    Restores and evictions are covered by unit tests over constructed changes
+    rather than by live observation: the sampled mainnet range 60200000-60200060
+    contains no RestoreFootprint operations and no evictions, so those paths
+    remain unconfirmed against real data.
