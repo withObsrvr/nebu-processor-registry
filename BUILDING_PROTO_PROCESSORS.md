@@ -60,7 +60,7 @@ amount := event.Transfer.Amount  // Type: string, never nil if field exists
 
 ### Required Tools
 
-1. **Go 1.21+**
+1. **Go 1.25+**
    ```bash
    go version
    ```

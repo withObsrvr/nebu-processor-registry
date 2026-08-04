@@ -216,17 +216,17 @@ module {MODULE_PATH}
 go 1.25.4
 
 require (
-    github.com/withObsrvr/nebu v0.6.8
+    github.com/withObsrvr/nebu v0.6.12
 )
 
 // Add type-specific dependencies:
-// - Origin: github.com/stellar/go-stellar-sdk v0.5.0
+// - Origin: github.com/stellar/go-stellar-sdk v0.7.0
 // - Origin (proto): google.golang.org/protobuf v1.36.11
 // - Sink (postgres): github.com/lib/pq v1.10.9
 // - Sink (nats): github.com/nats-io/nats.go v1.47.0
 ```
 
-Always pin a concrete `github.com/withObsrvr/nebu` version (e.g., `v0.6.1`) in the `require` block — do not write `latest`, which is not a valid Go module version. Check [the nebu releases page](https://github.com/withObsrvr/nebu/releases) for the current tag.
+Always pin a concrete `github.com/withObsrvr/nebu` version (e.g., `v0.6.12`) in the `require` block — do not write `latest`, which is not a valid Go module version. Check [the nebu releases page](https://github.com/withObsrvr/nebu/releases) for the current tag.
 
 ### Step 7: Generate README.md
 
