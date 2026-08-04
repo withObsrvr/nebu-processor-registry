@@ -1,0 +1,116 @@
+name: Security Scan
+
+# govulncheck across the registry's Go modules.
+#
+# Two triggers, deliberately:
+#   - pull_request scans only the modules a PR touches, for fast feedback.
+#   - schedule scans every module, because the vulnerability database changes
+#     even when this repository does not. A PR-only gate would go green on a
+#     Friday and still be shipping a vulnerable dependency on Monday.
+#
+# Scope note: govulncheck is Go-only. TypeScript processors (sqlite-sink) are
+# skipped here; they have no Go module to analyse.
+
+on:
+  pull_request:
+    paths:
+      - 'processors/**'
+      - '.github/workflows/security.yml'
+  schedule:
+    # Mondays at 07:00 UTC.
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Track the current stable toolchain rather than pinning. govulncheck
+      # reports standard-library vulnerabilities against whatever Go builds the
+      # code, so pinning an ageing toolchain here would manufacture findings
+      # that say more about the runner than about this repository. With stable,
+      # a standard-library finding means the module's own `go` directive is
+      # holding consumers on a vulnerable toolchain — which is a real finding.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Select modules to scan
+        id: select
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin "${{ github.base_ref }}"
+            changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+              | grep '^processors/' | cut -d'/' -f2 | sort -u || true)
+            scope="changed"
+          else
+            changed=$(ls processors)
+            scope="all"
+          fi
+
+          # Keep only directories that actually carry a Go module.
+          modules=""
+          for name in $changed; do
+            if [ -f "processors/$name/go.mod" ]; then
+              modules="$modules $name"
+            fi
+          done
+          modules=$(echo "$modules" | xargs || true)
+
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+          echo "modules=$modules" >> "$GITHUB_OUTPUT"
+          echo "Scanning ($scope): ${modules:-<none>}"
+
+      - name: Run govulncheck
+        if: steps.select.outputs.modules != ''
+        run: |
+          # Note: no `set -e` around the loop. Each module's exit status is
+          # captured explicitly, because a bare `for ... do cmd; done` returns
+          # only the LAST iteration's status — which would let a vulnerable
+          # module pass so long as the final one happened to be clean.
+          failed=""
+          clean=""
+
+          for name in ${{ steps.select.outputs.modules }}; do
+            echo "::group::govulncheck: $name"
+            if (cd "processors/$name" && govulncheck ./...); then
+              clean="$clean $name"
+            else
+              failed="$failed $name"
+            fi
+            echo "::endgroup::"
+          done
+
+          {
+            echo "## govulncheck (${{ steps.select.outputs.scope }})"
+            echo
+            if [ -n "$failed" ]; then
+              echo "**Vulnerable:**"
+              for name in $failed; do echo "- \`$name\`"; done
+              echo
+            fi
+            echo "Clean: $(echo "$clean" | wc -w) module(s)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -n "$failed" ]; then
+            echo "::error::govulncheck found called vulnerabilities in:$failed"
+            exit 1
+          fi
+
+          echo "✅ No called vulnerabilities in:$clean"
