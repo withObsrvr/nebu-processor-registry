@@ -1,0 +1,88 @@
+processor:
+  name: soroban-tx-resources
+  type: origin
+  description: Extract per-transaction Soroban resource footprints, result codes, fees, and envelope sizes
+  version: 0.1.0
+  language: Go
+  license: MIT
+  maintainers:
+    - withObsrvr
+
+repo:
+  github: withObsrvr/nebu-processor-registry
+  ref: main
+
+proto:
+  source: github.com/withObsrvr/nebu-processor-registry/processors/soroban-tx-resources
+  package: soroban_tx_resources
+
+schema:
+  version: v1
+  identifier: nebu.soroban_tx_resources.v1
+  documentation: https://github.com/withObsrvr/nebu-processor-registry/blob/main/processors/soroban-tx-resources/README.md
+
+docs:
+  quick_start: |
+    # Install the processor
+    nebu install soroban-tx-resources
+
+    # Extract a bounded ledger range
+    soroban-tx-resources --start-ledger 60200000 --end-ledger 60200100 -q
+
+  examples: |
+    # Inspect per-transaction resource and result facts
+    soroban-tx-resources --start-ledger 60200000 --end-ledger 60200010 -q | jq
+
+    # Per-ledger capacity numerators: the write-entry count a ledger reserved
+    soroban-tx-resources --start-ledger 60200000 --end-ledger 60200010 -q | \
+      jq -s -c 'group_by(.meta.ledgerSequence)
+                | map({ledger: .[0].meta.ledgerSequence,
+                       write_entries: (map(.readWriteEntries) | add),
+                       envelope_bytes: (map(.envelopeSizeBytes) | add)}) | .[]'
+
+    # Group failures by cause, the way a block explorer would present them
+    soroban-tx-resources --start-ledger 60200000 --end-ledger 60200020 -q | \
+      jq -c 'select(.successful==false)
+             | {resultCode, op: .operationResultCodes[0],
+                err: .contractErrorType, code: .contractErrorCode}' | \
+      sort | uniq -c | sort -rn
+
+    # Find the largest single writer in a ledger
+    soroban-tx-resources --start-ledger 60200000 --end-ledger 60200000 -q | \
+      jq -s -c 'max_by(.readWriteEntries)
+                | {tx: .meta.txHash, writes: .readWriteEntries}'
+
+    # Save the fact stream for DuckDB analysis
+    soroban-tx-resources --start-ledger 60200000 --end-ledger 60201000 -q | \
+      json-file-sink --file tx-resources.jsonl
+
+  extended_description: |
+    Emits one record per transaction in a ledger's transaction set, in apply
+    order, failed transactions included.
+
+    The processor exists because the protocol charges a ledger's capacity
+    against the entries DECLARED in each transaction's readWrite footprint, not
+    against the entries observed to change. contract-state can report what
+    changed; only the declared footprint can answer whether a ledger was
+    write-bound. Measured over mainnet ledgers 60200000-60200008, counting
+    observed changes undercounts declared writes by 20-70%.
+
+    Four facts here are reachable from no other origin: footprint read and write
+    ENTRY counts, transaction envelope size in bytes, decoded transaction and
+    operation result codes, and the contract's own error number from diagnostic
+    events.
+
+    Utilisation is deliberately not computed. The caps live in
+    ConfigSettingEntry and change by protocol upgrade, so dividing by them is a
+    downstream join against the config settings in force at that ledger, not a
+    fact about any single transaction.
+
+    Operation results resolve generically rather than through a switch over the
+    25-odd operation types: every inner arm carries a Code field whose generated
+    String() follows the same naming convention, so one reflective lookup
+    handles Soroban and classic alike and will not silently miss an operation
+    type added by a future protocol. Unrecognised enum values keep their numeric
+    identity rather than being folded into an existing bucket.
+
+    Eviction and restoration are not emitted here. Those live on LedgerCloseMeta
+    rather than on any transaction, and belong in a ledger-scoped processor.
