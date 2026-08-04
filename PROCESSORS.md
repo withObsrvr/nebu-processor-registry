@@ -94,6 +94,24 @@ nebu install contract-state
 contract-state --start-ledger 60200000 --end-ledger 60200100 | jq
 ```
 
+### ledger-change-stats
+
+Count ledger entry changes by change type, reason, and entry type, plus evictions
+
+- **Version**: 0.2.0
+- **Language**: Go
+- **License**: MIT
+- **Schema**: `nebu.ledger_change_stats.v1`
+- **Repository**: [github.com/withObsrvr/nebu-processor-registry](https://github.com/withObsrvr/nebu-processor-registry)
+
+```bash
+# Install
+nebu install ledger-change-stats
+
+# Use as origin
+ledger-change-stats --start-ledger 60200000 --end-ledger 60200100 | jq
+```
+
 ### liquidity-pool-events
 
 Extract liquidity pool operations (deposit, withdraw, trade) from Stellar ledgers
@@ -128,6 +146,24 @@ nebu install nft-events
 
 # Use as origin
 nft-events --start-ledger 60200000 --end-ledger 60200100 | jq
+```
+
+### soroban-tx-resources
+
+Extract per-transaction Soroban resource footprints, result codes, fees, and envelope sizes
+
+- **Version**: 0.1.0
+- **Language**: Go
+- **License**: MIT
+- **Schema**: `nebu.soroban_tx_resources.v1`
+- **Repository**: [github.com/withObsrvr/nebu-processor-registry](https://github.com/withObsrvr/nebu-processor-registry)
+
+```bash
+# Install
+nebu install soroban-tx-resources
+
+# Use as origin
+soroban-tx-resources --start-ledger 60200000 --end-ledger 60200100 | jq
 ```
 
 ### soroswap-pool-indexer

@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+package ledger_change_stats;
+
+option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/ledger-change-stats";
+
+// LedgerChangeStats counts every ledger entry change in one ledger, split by
+// change type, by the reason the change occurred, and by the type of entry
+// that changed. It also reports the entries evicted from the ledger at close.
+//
+// Unlike contract-state, which sees contract data only, this walks the full
+// change stream: accounts, trustlines, offers, claimable balances, liquidity
+// pools, contract data and code, config settings, and TTL entries — and
+// includes fee, refund, and protocol-upgrade changes alongside operation ones.
+message LedgerChangeStats {
+  uint32 ledger_sequence = 1;
+  int64 closed_at_unix = 2;
+
+  // ---- totals by change type ----
+
+  uint32 ledger_entries_created = 3;
+  uint32 ledger_entries_updated = 4;
+  uint32 ledger_entries_deleted = 5;
+
+  // Entries brought back from the archive by paying to restore them.
+  //
+  // This is read from LedgerEntryChangeType directly. Deriving the change type
+  // from whether Pre/Post are nil — as the original nebu example did — cannot
+  // distinguish a restore from a create, so restorations were previously
+  // invisible.
+  uint32 ledger_entries_restored = 6;
+
+  // State snapshots. These are not mutations; they record an entry's value
+  // before a transaction observed it.
+  //
+  // IN PRACTICE THIS IS ALWAYS ZERO. The ingest change reader elides state
+  // entries (`case LedgerEntryChangeTypeLedgerEntryState: continue` in
+  // GetChangesFromLedgerEntryChanges), so none ever reach this processor. Do
+  // not build on this field.
+  //
+  // The counter is kept so that every change type lands in exactly one bucket
+  // and the five sum to total_changes. Dropping it would leave a silent hole if
+  // a future reader starts emitting state entries.
+  uint32 ledger_entries_state = 7;
+
+  // Sum of every change seen, state entries included.
+  uint32 total_changes = 8;
+
+  // ---- totals by reason ----
+
+  uint32 fee_related_changes = 10;
+  uint32 tx_related_changes = 11;
+  uint32 operation_related_changes = 12;
+
+  // Refund of the unspent Soroban resource fee after execution.
+  uint32 fee_refund_related_changes = 13;
+
+  // Changes applied by a protocol upgrade rather than by any transaction.
+  uint32 upgrade_related_changes = 14;
+
+  // Changes whose reason the SDK could not classify. Non-zero here means the
+  // classifier is behind the protocol; it is surfaced rather than folded into
+  // another bucket.
+  uint32 unknown_reason_changes = 15;
+
+  // ---- per-entry-type breakdown ----
+
+  // One entry per LedgerEntryType that saw at least one change, ordered by the
+  // XDR enum so output is deterministic across runs.
+  repeated EntryTypeChangeCounts entry_types = 20;
+
+  // ---- eviction (archival) ----
+
+  // Entries evicted at ledger close because their lifetime ran out. Eviction
+  // is a ledger-level event carried on LedgerCloseMeta, not a transaction
+  // change, so it appears nowhere in the change stream above.
+  uint32 evicted_keys = 30;
+
+  // Evicted key counts by entry type, same ordering rule as entry_types.
+  repeated EntryTypeCount evicted_by_type = 31;
+
+  // False when this ledger's meta version predates eviction reporting. Callers
+  // must not read evicted_keys == 0 as "nothing was evicted" without checking
+  // this first.
+  bool eviction_available = 32;
+}
+
+// EntryTypeChangeCounts is one ledger entry type's change profile.
+message EntryTypeChangeCounts {
+  // Lowercase snake_case name: "account", "trustline", "offer", "data",
+  // "claimable_balance", "liquidity_pool", "contract_data", "contract_code",
+  // "config_setting", "ttl".
+  string entry_type = 1;
+
+  uint32 created = 2;
+  uint32 updated = 3;
+  uint32 deleted = 4;
+  uint32 restored = 5;
+  uint32 state = 6;
+  uint32 total = 7;
+}
+
+// EntryTypeCount is a plain count keyed by entry type.
+message EntryTypeCount {
+  string entry_type = 1;
+  uint32 count = 2;
+}
