@@ -32,11 +32,12 @@ import (
 var version = "0.1.0"
 
 var (
-	rpcURL      string
-	startLedger uint32
-	endLedger   uint32
-	networkPass string
-	quietMode   bool
+	rpcURL            string
+	startLedger       uint32
+	endLedger         uint32
+	networkPass       string
+	quietMode         bool
+	programStatusMode string
 )
 
 func main() {
@@ -45,7 +46,7 @@ func main() {
 		Short:   "Extract classic DEX trades from Stellar ledgers",
 		Version: version,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run()
+			return runWithProgramStatus("trade-extractor", programStatusMode, quietMode, run)
 		},
 	}
 
@@ -54,6 +55,7 @@ func main() {
 	rootCmd.Flags().Uint32Var(&endLedger, "end-ledger", 0, "End ledger sequence (0 for unbounded)")
 	rootCmd.Flags().StringVar(&networkPass, "network", network.PublicNetworkPassphrase, "Network passphrase or shorthand (mainnet|testnet)")
 	rootCmd.Flags().BoolVarP(&quietMode, "quiet", "q", false, "Suppress non-error output")
+	rootCmd.Flags().StringVar(&programStatusMode, "program-status", programStatusDefault(), "Program status reporting: auto, always, or never")
 	rootCmd.Flags().Bool(describeFlagName, false, "Emit machine-readable describe envelope to stdout and exit")
 
 	// Short-circuit into the describe-json protocol before cobra
@@ -91,6 +93,7 @@ func run() error {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigCh
+		markProgramStatusCanceled("trade-extractor", programStatusMode, quietMode)
 		if !quietMode {
 			fmt.Fprintln(os.Stderr, "\nShutting down...")
 		}
@@ -157,22 +160,22 @@ func run() error {
 }
 
 type tradeEvent struct {
-	Schema         string     `json:"_schema"`
-	NebuVersion    string     `json:"_nebu_version"`
-	LedgerSequence uint32     `json:"ledger_sequence"`
-	TimestampUnix  int64      `json:"timestamp_unix"`
-	TxHash         string     `json:"tx_hash"`
-	OpIndex        int        `json:"operation_index"`
-	TradeType      string     `json:"trade_type"`
-	Seller         string     `json:"seller"`
-	Buyer          string     `json:"buyer"`
-	SoldAsset      assetJSON  `json:"sold_asset"`
-	SoldAmount     string     `json:"sold_amount"`
-	BoughtAsset    assetJSON  `json:"bought_asset"`
-	BoughtAmount   string     `json:"bought_amount"`
-	OfferID        int64      `json:"offer_id,omitempty"`
-	PoolID         string     `json:"pool_id,omitempty"`
-	InSuccessfulTx bool       `json:"in_successful_tx"`
+	Schema         string    `json:"_schema"`
+	NebuVersion    string    `json:"_nebu_version"`
+	LedgerSequence uint32    `json:"ledger_sequence"`
+	TimestampUnix  int64     `json:"timestamp_unix"`
+	TxHash         string    `json:"tx_hash"`
+	OpIndex        int       `json:"operation_index"`
+	TradeType      string    `json:"trade_type"`
+	Seller         string    `json:"seller"`
+	Buyer          string    `json:"buyer"`
+	SoldAsset      assetJSON `json:"sold_asset"`
+	SoldAmount     string    `json:"sold_amount"`
+	BoughtAsset    assetJSON `json:"bought_asset"`
+	BoughtAmount   string    `json:"bought_amount"`
+	OfferID        int64     `json:"offer_id,omitempty"`
+	PoolID         string    `json:"pool_id,omitempty"`
+	InSuccessfulTx bool      `json:"in_successful_tx"`
 }
 
 type assetJSON struct {

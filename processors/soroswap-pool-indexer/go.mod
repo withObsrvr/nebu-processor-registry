@@ -5,8 +5,9 @@ go 1.25.4
 require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
-	github.com/stellar/go-stellar-sdk v0.7.1
-	github.com/withObsrvr/nebu v0.6.13
+	github.com/stellar/go-stellar-sdk v0.7.3
+	github.com/withObsrvr/nebu v0.6.14
+	golang.org/x/term v0.45.0
 )
 
 require (
@@ -16,8 +17,9 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/stellar/go-xdr v0.0.0-20260529210834-0bf8f4956364 // indirect
+	github.com/stellar/go-xdr v0.0.0-20260806060815-dc590f17552a // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )

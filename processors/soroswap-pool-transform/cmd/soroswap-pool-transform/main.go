@@ -49,14 +49,15 @@ func (s *stringList) Set(v string) error {
 }
 
 type config struct {
-	Network      string
-	Factories    []string
-	EventNames   []string
-	IncludeRaw   bool
-	Strict       bool
-	StatsEnabled bool
-	Verbose      bool
-	Quiet        bool
+	Network       string
+	Factories     []string
+	EventNames    []string
+	IncludeRaw    bool
+	Strict        bool
+	StatsEnabled  bool
+	Verbose       bool
+	Quiet         bool
+	ProgramStatus string
 }
 
 type stats struct {
@@ -121,13 +122,17 @@ func main() {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigCh
+		markProgramStatusCanceled("soroswap-pool-transform", cfg.ProgramStatus, cfg.Quiet)
 		signal.Stop(sigCh)
 		_ = os.Stdin.Close()
 	}()
-	st, err := process(os.Stdin, os.Stdout, os.Stderr, cfg)
-	if cfg.StatsEnabled && !cfg.Quiet {
-		fmt.Fprintf(os.Stderr, "soroswap-pool-transform stats: read=%d parse_error=%d matched_factory=%d matched_event_name=%d missing_event_name=%d rejected_event_name=%d emitted=%d skipped=%d decode_error=%d\n", st.Read, st.ParseError, st.MatchedFactory, st.MatchedEventName, st.MissingEventName, st.RejectedEventName, st.Emitted, st.Skipped, st.DecodeError)
-	}
+	err = runWithProgramStatus("soroswap-pool-transform", cfg.ProgramStatus, cfg.Quiet, func() error {
+		st, processErr := process(os.Stdin, os.Stdout, os.Stderr, cfg)
+		if cfg.StatsEnabled && !cfg.Quiet {
+			fmt.Fprintf(os.Stderr, "soroswap-pool-transform stats: read=%d parse_error=%d matched_factory=%d matched_event_name=%d missing_event_name=%d rejected_event_name=%d emitted=%d skipped=%d decode_error=%d\n", st.Read, st.ParseError, st.MatchedFactory, st.MatchedEventName, st.MissingEventName, st.RejectedEventName, st.Emitted, st.Skipped, st.DecodeError)
+		}
+		return processErr
+	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
@@ -136,7 +141,7 @@ func main() {
 
 func parseFlags(args []string) (config, bool, error) {
 	var factories, eventNames stringList
-	cfg := config{IncludeRaw: true}
+	cfg := config{IncludeRaw: true, ProgramStatus: programStatusDefault()}
 	fs := flag.NewFlagSet("soroswap-pool-transform", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.StringVar(&cfg.Network, "network", "", "network name (pubnet, testnet)")
@@ -149,6 +154,7 @@ func parseFlags(args []string) (config, bool, error) {
 	fs.BoolVar(&cfg.Verbose, "verbose", false, "print per-error diagnostics to stderr")
 	fs.BoolVar(&cfg.Quiet, "quiet", false, "suppress non-error diagnostics")
 	fs.BoolVar(&cfg.Quiet, "q", false, "suppress non-error diagnostics")
+	fs.StringVar(&cfg.ProgramStatus, "program-status", cfg.ProgramStatus, "program status reporting: auto, always, or never")
 	describe := fs.Bool("describe-json", false, "print registry/schema description JSON and exit")
 	if err := fs.Parse(args); err != nil {
 		var usage strings.Builder
@@ -600,6 +606,7 @@ func buildDescribe() processor.DescribeEnvelope {
 			{Name: "stats", Type: "bool", Description: "print summary counts to stderr", Default: "false"},
 			{Name: "verbose", Type: "bool", Description: "print per-error diagnostics to stderr", Default: "false"},
 			{Name: "quiet", Type: "bool", Description: "suppress all non-error stderr output", Default: "false"},
+			{Name: "program-status", Type: "string", Description: "program status reporting: auto, always, or never", Default: programStatusDefault()},
 		},
 		Examples: []processor.DescribeExample{
 			{Comment: "Historical archive backfill", Command: "nebu fetch --network pubnet --mode archive --start-ledger 50000000 --end-ledger 51000000 | contract-events | soroswap-pool-transform --network pubnet"},

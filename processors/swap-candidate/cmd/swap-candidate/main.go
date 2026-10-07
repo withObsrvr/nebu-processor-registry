@@ -18,8 +18,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -30,17 +30,18 @@ import (
 var version = "0.1.0"
 
 var (
-	minTransfers int
-	quietMode    bool
+	minTransfers      int
+	quietMode         bool
+	programStatusMode string
 )
 
 // transferLeg represents a single token transfer within a transaction.
 type transferLeg struct {
-	From            string      `json:"from"`
-	To              string      `json:"to"`
-	Asset           assetInfo   `json:"asset"`
-	Amount          string      `json:"amount"`
-	ContractAddress string      `json:"contract_address,omitempty"`
+	From            string    `json:"from"`
+	To              string    `json:"to"`
+	Asset           assetInfo `json:"asset"`
+	Amount          string    `json:"amount"`
+	ContractAddress string    `json:"contract_address,omitempty"`
 }
 
 type assetInfo struct {
@@ -64,12 +65,13 @@ func main() {
 		Short:   "Detect swap patterns in token transfer events",
 		Version: version,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run()
+			return runWithProgramStatus("swap-candidate", programStatusMode, quietMode, run)
 		},
 	}
 
 	rootCmd.Flags().IntVar(&minTransfers, "min-transfers", 2, "Minimum transfers per tx to consider as swap candidate")
 	rootCmd.Flags().BoolVarP(&quietMode, "quiet", "q", false, "Suppress non-error output")
+	rootCmd.Flags().StringVar(&programStatusMode, "program-status", programStatusDefault(), "Program status reporting: auto, always, or never")
 	rootCmd.Flags().Bool(describeFlagName, false, "Emit machine-readable describe envelope to stdout and exit")
 
 	// Short-circuit into the describe-json protocol before cobra
@@ -98,6 +100,7 @@ func run() error {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigCh
+		markProgramStatusCanceled("swap-candidate", programStatusMode, quietMode)
 		signal.Stop(sigCh)
 		if !quietMode {
 			fmt.Fprintln(os.Stderr, "\nShutting down...")

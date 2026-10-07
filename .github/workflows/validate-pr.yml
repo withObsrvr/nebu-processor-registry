@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'processors/**'
+      - 'scripts/check-dependency-versions.sh'
+      - '.github/workflows/validate-pr.yml'
 
 jobs:
   validate:
@@ -21,6 +23,9 @@ jobs:
         uses: cachix/install-nix-action@v30
         with:
           nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Check dependency versions
+        run: bash scripts/check-dependency-versions.sh
 
       - name: Find changed processor directories
         id: changed-processors
