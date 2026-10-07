@@ -288,7 +288,7 @@ func TestPrintDescribeIncludesAllFlags(t *testing.T) {
 	if env.Name != "soroswap-pool-transform" || env.Type != "transform" || env.Schema.ID != schemaID {
 		t.Fatalf("envelope basics wrong: %+v", env)
 	}
-	wantFlags := []string{"network", "factory", "event-name", "include-raw", "omit-raw", "strict", "stats", "verbose", "quiet"}
+	wantFlags := []string{"network", "factory", "event-name", "include-raw", "omit-raw", "strict", "stats", "verbose", "quiet", "program-status"}
 	got := make(map[string]bool, len(env.Flags))
 	for _, f := range env.Flags {
 		got[f.Name] = true

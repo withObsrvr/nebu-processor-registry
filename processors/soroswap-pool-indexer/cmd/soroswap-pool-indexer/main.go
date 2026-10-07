@@ -39,13 +39,14 @@ import (
 var version = "0.2.0"
 
 var (
-	rpcURL          string
-	startLedger     uint32
-	endLedger       uint32
-	networkPass     string
-	quietMode       bool
-	factoryContract string
-	pageLimit       uint
+	rpcURL            string
+	startLedger       uint32
+	endLedger         uint32
+	networkPass       string
+	quietMode         bool
+	programStatusMode string
+	factoryContract   string
+	pageLimit         uint
 )
 
 // Known Soroswap factory addresses by network shorthand
@@ -60,7 +61,7 @@ func main() {
 		Short:   "Index Soroswap pool creation events from the factory contract via getEvents RPC",
 		Version: version,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run()
+			return runWithProgramStatus("soroswap-pool-indexer", programStatusMode, quietMode, run)
 		},
 	}
 
@@ -69,6 +70,7 @@ func main() {
 	rootCmd.Flags().Uint32Var(&endLedger, "end-ledger", 0, "End ledger sequence (0 = use RPC latest)")
 	rootCmd.Flags().StringVar(&networkPass, "network", "mainnet", "Network (mainnet|testnet) or full passphrase")
 	rootCmd.Flags().BoolVarP(&quietMode, "quiet", "q", false, "Suppress non-error output")
+	rootCmd.Flags().StringVar(&programStatusMode, "program-status", programStatusDefault(), "Program status reporting: auto, always, or never")
 	rootCmd.Flags().StringVar(&factoryContract, "factory", "", "Soroswap factory contract address (auto-detected from --network)")
 	rootCmd.Flags().UintVar(&pageLimit, "page-limit", 100, "Events per RPC page request")
 	rootCmd.Flags().Bool(describeFlagName, false, "Emit machine-readable describe envelope to stdout and exit")
@@ -125,6 +127,7 @@ func run() error {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigCh
+		markProgramStatusCanceled("soroswap-pool-indexer", programStatusMode, quietMode)
 		if !quietMode {
 			fmt.Fprintln(os.Stderr, "\nShutting down...")
 		}
