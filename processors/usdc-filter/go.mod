@@ -2,7 +2,7 @@ module github.com/withObsrvr/nebu-processor-registry/processors/usdc-filter
 
 go 1.25.4
 
-require github.com/withObsrvr/nebu v0.6.14
+require github.com/withObsrvr/nebu v0.6.15
 
 require (
 	cel.dev/expr v0.25.1 // indirect

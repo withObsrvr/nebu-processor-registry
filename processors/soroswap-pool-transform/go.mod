@@ -3,7 +3,7 @@ module github.com/withObsrvr/nebu-processor-registry/processors/soroswap-pool-tr
 go 1.25.4
 
 require (
-	github.com/withObsrvr/nebu v0.6.14
+	github.com/withObsrvr/nebu v0.6.15
 	golang.org/x/term v0.45.0
 )
 
