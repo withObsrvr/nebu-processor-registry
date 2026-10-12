@@ -48,7 +48,7 @@ docs:
       json-file-sink --out large-xlm.jsonl
 
     # Large AQUA transfers to NATS
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       asset-filter --code AQUA | \
       amount-filter --min 100000000 | \
       nats-sink --subject "alerts.aqua.whales" --jetstream

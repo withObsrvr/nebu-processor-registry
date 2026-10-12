@@ -150,7 +150,7 @@ docs:
 
     **2. Large USDC transfers (whale tracking):**
     ```bash
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       amount-filter --min 100000000 | \
       nats-sink --subject "alerts.usdc.whales"
@@ -158,14 +158,14 @@ docs:
 
     **3. USDC to PostgreSQL:**
     ```bash
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       postgres-sink --dsn "$POSTGRES_DSN" --table usdc_transfers
     ```
 
     **4. Deduplicated USDC stream:**
     ```bash
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       dedup --key meta.txHash | \
       json-file-sink --out usdc-unique.jsonl

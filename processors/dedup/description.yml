@@ -22,7 +22,7 @@ docs:
 
   examples: |
     # Avoid processing duplicate transfers
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       dedup --key meta.txHash | \
       postgres-sink --dsn "$DSN" --table usdc_transfers
@@ -151,7 +151,7 @@ docs:
 
     **1. Idempotent database inserts:**
     ```bash
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       dedup --key meta.txHash | \
       postgres-sink --dsn "$DSN" --table transfers --conflict ignore
     ```
@@ -178,7 +178,7 @@ docs:
     # Restart every hour to bound memory
     while true; do
       timeout 3600 sh -c '
-        token-transfer --start-ledger $(cat last-ledger.txt) --follow | \
+        token-transfer --start-ledger $(cat last-ledger.txt) | \
           dedup --key meta.txHash | \
           tee >(jq -r ".meta.ledgerSequence" | tail -1 > last-ledger.txt) | \
           postgres-sink --dsn "$DSN" --table transfers

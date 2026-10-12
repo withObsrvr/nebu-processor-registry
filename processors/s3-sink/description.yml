@@ -18,36 +18,36 @@ docs:
     nebu install s3-sink
 
     # Write to S3
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       s3-sink --bucket my-data-lake --prefix stellar/transfers
 
   examples: |
     # Write transfers to S3 with hourly partitioning
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       s3-sink --bucket my-data-lake --prefix stellar/transfers
 
     # Daily partitioning, uncompressed
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       s3-sink --bucket my-bucket --prefix transfers \
         --partition daily --format jsonl
 
     # Write to MinIO
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       s3-sink --bucket my-bucket --prefix transfers \
         --endpoint http://minio:9000
 
     # Write to Cloudflare R2
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       s3-sink --bucket my-bucket --prefix transfers \
         --endpoint https://ACCOUNT.r2.cloudflarestorage.com
 
     # USDC transfers to data lake
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       s3-sink --bucket analytics --prefix usdc/transfers
 
     # Custom flush settings for high volume
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       s3-sink --bucket my-bucket --prefix transfers \
         --flush-interval 1m --flush-size 128000000
 

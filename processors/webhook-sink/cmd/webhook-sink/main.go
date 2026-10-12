@@ -6,15 +6,15 @@
 // Usage:
 //
 //	# Post events to a webhook
-//	token-transfer --start-ledger 60200000 --follow | \
+//	token-transfer --start-ledger 60200000 | \
 //	  webhook-sink --url https://example.com/webhook
 //
 //	# With authentication
-//	token-transfer --start-ledger 60200000 --follow | \
+//	token-transfer --start-ledger 60200000 | \
 //	  webhook-sink --url https://example.com/webhook --auth-header "Bearer token123"
 //
 //	# Batched delivery
-//	token-transfer --start-ledger 60200000 --follow | \
+//	token-transfer --start-ledger 60200000 | \
 //	  webhook-sink --url https://example.com/webhook --batch-size 100
 package main
 

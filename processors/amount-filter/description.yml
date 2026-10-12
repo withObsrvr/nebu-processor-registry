@@ -25,13 +25,13 @@ docs:
 
   examples: |
     # Track large USDC transfers (>$100)
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       amount-filter --min 1000000000 | \
       json-file-sink --out large-usdc.jsonl
 
     # Track whale movements (>1000 XLM)
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       amount-filter --min 10000000000 | \
       nats-sink --subject "whales.transfers"
 
@@ -167,14 +167,14 @@ docs:
 
     **1. Whale alerts (>1000 XLM):**
     ```bash
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       amount-filter --min 10000000000 | \
       nats-sink --subject "alerts.whales" --jetstream
     ```
 
     **2. Large USDC transfers (>$1000):**
     ```bash
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       amount-filter --min 10000000000 | \
       postgres-sink --dsn "$DSN" --table large_usdc_transfers

@@ -38,16 +38,16 @@ docs:
       jq 'select(.type == "deposit")'
 
     # Store to PostgreSQL
-    liquidity-pool-events --start-ledger 60200000 --follow | \
+    liquidity-pool-events --start-ledger 60200000 | \
       postgres-sink --dsn "$DSN" --table lp_events
 
     # Track a specific pool
-    liquidity-pool-events --start-ledger 60200000 --follow | \
+    liquidity-pool-events --start-ledger 60200000 | \
       jq 'select(.poolId == "abc123...")' | \
       nats-sink --subject "lp.events" --jetstream
 
     # LP trades to data lake
-    liquidity-pool-events --start-ledger 60200000 --follow | \
+    liquidity-pool-events --start-ledger 60200000 | \
       jq 'select(.type == "trade")' | \
       s3-sink --bucket analytics --prefix stellar/lp-trades
 

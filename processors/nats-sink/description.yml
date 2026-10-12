@@ -18,36 +18,36 @@ docs:
     nebu install nats-sink
 
     # Publish to NATS (assumes NATS running on localhost:4222)
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       nats-sink --subject "stellar.transfers"
 
   examples: |
     # Publish live USDC transfers
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       nats-sink --subject "stellar.usdc.transfers"
 
     # Dynamic routing by asset code
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       nats-sink --subject "stellar.{transfer.assetCode}"
 
     # Dynamic routing by event type
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       jq -c '{type: (if .transfer then "transfer" elif .mint then "mint" else "other" end), data: .}' | \
       nats-sink --subject "stellar.{type}"
 
     # JetStream for reliable delivery
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       nats-sink --subject "stellar.usdc" --jetstream
 
     # Custom NATS server
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       nats-sink --url "nats://nats.example.com:4222" --subject "events"
 
     # With authentication
     NATS_CREDS=/path/to/user.creds \
-      token-transfer --start-ledger 60200000 --follow | \
+      token-transfer --start-ledger 60200000 | \
       nats-sink --subject "stellar.transfers" --jetstream
 
   extended_description: |
@@ -138,7 +138,7 @@ docs:
 
     1. **Real-time whale tracker:**
     ```bash
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       amount-filter --min 1000000000 | \
       time-window --last 1h | \
       nats-sink --subject "alerts.whales" --jetstream
@@ -147,7 +147,7 @@ docs:
     2. **Multi-asset routing:**
     ```bash
     # Publish each asset to its own subject
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       nats-sink --subject "stellar.{transfer.assetCode}"
 
     # Consumers can subscribe selectively:
@@ -159,7 +159,7 @@ docs:
     3. **Event-driven architecture:**
     ```bash
     # Producer: nebu pipeline
-    contract-events --start-ledger 60200000 --follow | \
+    contract-events --start-ledger 60200000 | \
       nats-sink --subject "contracts.{eventType}" --jetstream
 
     # Consumer 1: Index transfers

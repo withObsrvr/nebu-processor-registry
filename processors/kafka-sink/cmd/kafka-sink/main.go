@@ -6,11 +6,11 @@
 // Usage:
 //
 //	# Publish to Kafka
-//	token-transfer --start-ledger 60200000 --follow | \
+//	token-transfer --start-ledger 60200000 | \
 //	  kafka-sink --brokers kafka:9092 --topic stellar-transfers
 //
 //	# With partition key
-//	token-transfer --start-ledger 60200000 --follow | \
+//	token-transfer --start-ledger 60200000 | \
 //	  kafka-sink --brokers kafka:9092 --topic transfers --key transfer.asset.issuedAsset.assetCode
 package main
 

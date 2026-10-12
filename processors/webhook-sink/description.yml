@@ -18,45 +18,45 @@ docs:
     nebu install webhook-sink
 
     # Post events to a webhook
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       webhook-sink --url https://example.com/webhook
 
   examples: |
     # USDC transfers to a webhook
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       webhook-sink --url https://example.com/usdc-hook
 
     # With authentication
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       webhook-sink --url https://example.com/webhook \
         --auth-header "Bearer eyJhbG..."
 
     # With custom headers
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       webhook-sink --url https://example.com/webhook \
         --header "X-Source:nebu" \
         --header "X-Environment:production"
 
     # Batched delivery (100 events per request)
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       webhook-sink --url https://example.com/batch-hook \
         --batch-size 100 --flush-interval 10s
 
     # Whale alerts to Slack
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       amount-filter --min 10000000000 | \
       webhook-sink --url https://hooks.slack.com/services/T.../B.../xxx
 
     # Rate-limited webhook (when available)
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       rate-limiter --rate 10 | \
       webhook-sink --url https://api.example.com/events
 
     # Using environment variables
     WEBHOOK_URL=https://example.com/hook WEBHOOK_AUTH="Bearer token" \
-      token-transfer --start-ledger 60200000 --follow | webhook-sink
+      token-transfer --start-ledger 60200000 | webhook-sink
 
   extended_description: |
     # Webhook Sink Processor
@@ -177,7 +177,7 @@ docs:
 
     **1. USDC whale alerts to Slack:**
     ```bash
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       amount-filter --min 100000000000 | \
       webhook-sink --url https://hooks.slack.com/services/...
@@ -185,7 +185,7 @@ docs:
 
     **2. Contract events to custom API:**
     ```bash
-    contract-events --start-ledger 60200000 --follow | \
+    contract-events --start-ledger 60200000 | \
       contract-filter --contract CABC...XYZ | \
       webhook-sink --url https://api.myapp.com/events \
         --auth-header "Bearer $API_TOKEN" \
@@ -194,7 +194,7 @@ docs:
 
     **3. All transfers to analytics:**
     ```bash
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       webhook-sink --url https://api.segment.io/v1/track \
         --auth-header "Basic $SEGMENT_KEY" \
         --batch-size 100

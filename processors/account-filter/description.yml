@@ -23,7 +23,7 @@ docs:
 
   examples: |
     # Track all activity for an account
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       account-filter --account GABC...XYZ | \
       postgres-sink --dsn "$DSN" --table my_account_activity
 
@@ -32,7 +32,7 @@ docs:
       account-filter --account GABC...XYZ --account GDEF...123
 
     # Use a watchlist file
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       account-filter --account-file watchlist.txt | \
       nats-sink --subject "alerts.watchlist" --jetstream
 
@@ -41,13 +41,13 @@ docs:
       account-filter --account GABC...XYZ --role source
 
     # Combine with asset filter
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       account-filter --account GABC...XYZ | \
       asset-filter --code USDC | \
       json-file-sink --out my-usdc-activity.jsonl
 
     # Track contract invocations by account
-    contract-invocation --start-ledger 60200000 --follow | \
+    contract-invocation --start-ledger 60200000 | \
       account-filter --account GABC...XYZ | \
       postgres-sink --dsn "$DSN" --table my_invocations
 

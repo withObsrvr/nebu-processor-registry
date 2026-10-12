@@ -18,23 +18,23 @@ docs:
     nebu install rate-limiter
 
     # Limit to 100 events/sec
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       rate-limiter --rate 100
 
   examples: |
     # Limit to 100 events/sec before webhook
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       rate-limiter --rate 100 | \
       webhook-sink --url https://example.com/hook
 
     # Limit to 10 events/sec with burst of 50
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       rate-limiter --rate 10 --burst 50 | \
       webhook-sink --url https://api.example.com/events
 
     # Gentle rate for third-party API
-    contract-events --start-ledger 60200000 --follow | \
+    contract-events --start-ledger 60200000 | \
       rate-limiter --rate 5 | \
       webhook-sink --url https://api.thirdparty.com/events
 

@@ -40,11 +40,11 @@ docs:
     ttl-tracker --start-ledger 60200000 --end-ledger 60200100 | jq
 
     # Store TTL data to PostgreSQL
-    ttl-tracker --start-ledger 60200000 --follow | \
+    ttl-tracker --start-ledger 60200000 | \
       postgres-sink --dsn "$DSN" --table ttl_entries
 
     # Stream TTL changes to NATS
-    ttl-tracker --start-ledger 60200000 --follow | \
+    ttl-tracker --start-ledger 60200000 | \
       nats-sink --subject "stellar.ttl" --jetstream
 
     # Find entries expiring soon (within 1000 ledgers from current)
@@ -53,11 +53,11 @@ docs:
 
     # Combine with contract-state for full storage lifecycle
     # Terminal 1: State changes
-    contract-state --start-ledger 60200000 --follow | \
+    contract-state --start-ledger 60200000 | \
       postgres-sink --dsn "$DSN" --table contract_state
 
     # Terminal 2: TTL tracking
-    ttl-tracker --start-ledger 60200000 --follow | \
+    ttl-tracker --start-ledger 60200000 | \
       postgres-sink --dsn "$DSN" --table ttl_entries
 
   extended_description: |

@@ -34,7 +34,7 @@ docs:
       swap-normalizer -q | jq .
 
     # Pipe to postgres-sink
-    token-transfer -q --start-ledger 60200000 --follow | \
+    token-transfer -q --start-ledger 60200000 | \
       swap-candidate -q | \
       soroswap-detector -q --network testnet | \
       swap-normalizer -q | \
