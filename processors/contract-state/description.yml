@@ -44,11 +44,11 @@ docs:
       contract-filter --contract CABC...XYZ | jq
 
     # Store to PostgreSQL
-    contract-state --start-ledger 60200000 --follow | \
+    contract-state --start-ledger 60200000 | \
       postgres-sink --dsn "$DSN" --table contract_state
 
     # Track a specific contract's state to NATS
-    contract-state --start-ledger 60200000 --follow | \
+    contract-state --start-ledger 60200000 | \
       contract-filter --contract CABC...XYZ | \
       nats-sink --subject "contract.state" --jetstream
 

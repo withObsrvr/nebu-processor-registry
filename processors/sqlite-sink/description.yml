@@ -37,12 +37,12 @@ docs:
       sqlite-sink --db transfers.db
 
     # Filter first, custom table
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       jq -c 'select(.transfer.assetCode == "USDC")' | \
       sqlite-sink --db stellar.db --table usdc_transfers
 
     # Fan out: live NATS AND a local queryable archive
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       tee >(nats-sink --subject "stellar.live" --jetstream) | \
       sqlite-sink --db archive.db
 

@@ -25,7 +25,7 @@ docs:
 
   examples: |
     # Track recent whale movements (last 6 hours)
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       amount-filter --min 10000000000 | \
       time-window --last 6h | \
       nats-sink --subject "whales.recent"
@@ -42,7 +42,7 @@ docs:
       postgres-sink --dsn "$DSN" --table jan_2024_events
 
     # Recent contract activity (last 30 minutes)
-    contract-invocation --start-ledger 60200000 --follow | \
+    contract-invocation --start-ledger 60200000 | \
       time-window --last 30m | \
       jq 'select(.functionName == "swap")'
 
@@ -140,7 +140,7 @@ docs:
 
     **1. Real-time monitoring (last 5 minutes):**
     ```bash
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       time-window --last 5m | \
       amount-filter --min 10000000000 | \
       nats-sink --subject "alerts.large-transfers"
@@ -224,6 +224,6 @@ docs:
 
     1. **Use --last for relative windows:** Simpler and more readable
     2. **UTC timestamps:** Always use UTC for --start/--end
-    3. **Combine with --follow:** For real-time sliding windows
+    3. **Use an unbounded origin:** For real-time sliding windows
     4. **Place early in pipeline:** Filter before expensive processing
     5. **Document timestamps:** Comment Unix timestamps in scripts

@@ -33,7 +33,7 @@ docs:
       postgres-sink --dsn "$DSN" --table my_invocations
 
     # Filter using a watchlist file
-    contract-events --start-ledger 60200000 --follow | \
+    contract-events --start-ledger 60200000 | \
       contract-filter --contract-file defi-protocols.txt | \
       nats-sink --subject "defi.events" --jetstream
 
@@ -43,7 +43,7 @@ docs:
       json-file-sink --out sac-transfers.jsonl
 
     # Combine with other filters
-    contract-events --start-ledger 60200000 --follow | \
+    contract-events --start-ledger 60200000 | \
       contract-filter --contract CABC...XYZ | \
       dedup --key meta.txHash | \
       postgres-sink --dsn "$DSN" --table protocol_events
@@ -131,21 +131,21 @@ docs:
 
     **1. Track a specific DEX:**
     ```bash
-    contract-events --start-ledger 60200000 --follow | \
+    contract-events --start-ledger 60200000 | \
       contract-filter --contract CDEX...ADDR | \
       postgres-sink --dsn "$DSN" --table dex_events
     ```
 
     **2. Monitor multiple protocols:**
     ```bash
-    contract-invocation --start-ledger 60200000 --follow | \
+    contract-invocation --start-ledger 60200000 | \
       contract-filter --contract-file protocols.txt | \
       nats-sink --subject "protocols.{contractId}" --jetstream
     ```
 
     **3. Contract state tracking:**
     ```bash
-    contract-state --start-ledger 60200000 --follow | \
+    contract-state --start-ledger 60200000 | \
       contract-filter --contract CABC...XYZ | \
       postgres-sink --dsn "$DSN" --table my_contract_state
     ```

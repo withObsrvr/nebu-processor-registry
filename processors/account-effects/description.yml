@@ -38,17 +38,17 @@ docs:
       jq 'select(.type | startswith("trustline"))'
 
     # Track signer changes for compliance
-    account-effects --start-ledger 60200000 --follow | \
+    account-effects --start-ledger 60200000 | \
       jq 'select(.type | startswith("signer"))' | \
       postgres-sink --dsn "$DSN" --table signer_changes
 
     # Track account for specific address
-    account-effects --start-ledger 60200000 --follow | \
+    account-effects --start-ledger 60200000 | \
       account-filter --account GABC...XYZ | \
       nats-sink --subject "account.effects" --jetstream
 
     # Offer lifecycle tracking
-    account-effects --start-ledger 60200000 --follow | \
+    account-effects --start-ledger 60200000 | \
       jq 'select(.type | startswith("offer"))' | \
       postgres-sink --dsn "$DSN" --table offer_events
 

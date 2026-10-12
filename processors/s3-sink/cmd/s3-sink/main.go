@@ -7,11 +7,11 @@
 // Usage:
 //
 //	# Write to S3
-//	token-transfer --start-ledger 60200000 --follow | \
+//	token-transfer --start-ledger 60200000 | \
 //	  s3-sink --bucket my-data-lake --prefix stellar/transfers
 //
 //	# Write to MinIO
-//	token-transfer --start-ledger 60200000 --follow | \
+//	token-transfer --start-ledger 60200000 | \
 //	  s3-sink --bucket my-bucket --endpoint http://minio:9000
 package main
 

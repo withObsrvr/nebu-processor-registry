@@ -39,7 +39,7 @@ docker exec nebu-postgres createdb -U postgres stellar
 
 ```bash
 # Stream token transfers to Postgres
-token-transfer --start-ledger 60200000 --follow | \
+token-transfer --start-ledger 60200000 | \
   postgres-sink --dsn "postgres://postgres:postgres@localhost/stellar"
 ```
 
@@ -126,7 +126,7 @@ SELECT * FROM events WHERE event_type = 'transfer';
 ### Store Token Transfers
 
 ```bash
-token-transfer --start-ledger 60200000 --follow | \
+token-transfer --start-ledger 60200000 | \
   postgres-sink \
     --dsn "postgres://localhost/stellar" \
     --table token_events \
@@ -136,7 +136,7 @@ token-transfer --start-ledger 60200000 --follow | \
 ### Store Contract Events
 
 ```bash
-contract-events --start-ledger 60200000 --follow | \
+contract-events --start-ledger 60200000 | \
   postgres-sink \
     --dsn "postgres://localhost/stellar" \
     --table contract_events
@@ -145,7 +145,7 @@ contract-events --start-ledger 60200000 --follow | \
 ### Filter and Store USDC Only
 
 ```bash
-token-transfer --start-ledger 60200000 --follow | \
+token-transfer --start-ledger 60200000 | \
   jq -c 'select(.transfer.asset.code == "USDC")' | \
   postgres-sink \
     --table usdc_transfers \

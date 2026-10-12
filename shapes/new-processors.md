@@ -354,7 +354,7 @@ NICE TO HAVE: --flush-interval and --flush-size for tuning
 COULD HAVE:  --endpoint for MinIO/custom S3-compatible stores
 ```
 
-**Done:** `token-transfer --start-ledger 60200000 --follow | s3-sink --bucket my-data-lake --prefix stellar/transfers` writes partitioned JSONL.gz files to S3 every 5 minutes.
+**Done:** `token-transfer --start-ledger 60200000 | s3-sink --bucket my-data-lake --prefix stellar/transfers` writes partitioned JSONL.gz files to S3 every 5 minutes.
 
 ---
 

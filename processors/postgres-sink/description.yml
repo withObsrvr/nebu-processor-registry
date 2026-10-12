@@ -23,7 +23,7 @@ docs:
 
   examples: |
     # Store USDC transfers
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       postgres-sink --dsn "postgres://user:pass@localhost/db" --table usdc_transfers
 
@@ -34,12 +34,12 @@ docs:
                     --conflict update
 
     # Store contract events
-    contract-events --start-ledger 60200000 --follow | \
+    contract-events --start-ledger 60200000 | \
       postgres-sink --dsn "$POSTGRES_DSN" --table contract_events
 
     # Use environment variable for credentials
     export POSTGRES_DSN="postgres://user:pass@localhost/db?sslmode=disable"
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       postgres-sink --table stellar_transfers
 
     # Batched inserts for performance
@@ -196,7 +196,7 @@ docs:
     2. **Real-time monitoring with Hasura:**
     ```bash
     # Stream to PostgreSQL
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       usdc-filter | \
       postgres-sink --dsn "$POSTGRES_DSN" --table usdc_transfers
 
@@ -207,15 +207,15 @@ docs:
     3. **Multi-table pipeline:**
     ```bash
     # Transfers table
-    token-transfer --start-ledger 60200000 --follow | \
+    token-transfer --start-ledger 60200000 | \
       postgres-sink --dsn "$POSTGRES_DSN" --table transfers &
 
     # Contract events table
-    contract-events --start-ledger 60200000 --follow | \
+    contract-events --start-ledger 60200000 | \
       postgres-sink --dsn "$POSTGRES_DSN" --table contract_events &
 
     # Contract invocations table
-    contract-invocation --start-ledger 60200000 --follow | \
+    contract-invocation --start-ledger 60200000 | \
       postgres-sink --dsn "$POSTGRES_DSN" --table invocations
     ```
 
