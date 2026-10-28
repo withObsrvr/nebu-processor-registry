@@ -199,8 +199,8 @@ Add to go.mod:
 
 ```go
 require (
-	github.com/stellar/go-stellar-sdk v0.7.1
-	github.com/withObsrvr/nebu v0.6.13
+	github.com/stellar/go-stellar-sdk v0.8.0
+	github.com/withObsrvr/nebu v0.6.17
 	google.golang.org/protobuf v1.36.11
 )
 ```

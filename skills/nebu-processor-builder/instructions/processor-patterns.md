@@ -176,10 +176,10 @@ func addFlags(cmd *cobra.Command) {
 ```go
 module github.com/withObsrvr/nebu/examples/processors/{name}
 
-go 1.25.4
+go 1.26.0
 
 require (
-    github.com/withObsrvr/nebu v0.6.13
+    github.com/withObsrvr/nebu v0.6.17
     // Add processor-specific dependencies
 )
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-expected_sdk="${EXPECTED_STELLAR_SDK_VERSION:-v0.7.3}"
-expected_nebu="${EXPECTED_NEBU_VERSION:-v0.6.15}"
+expected_sdk="${EXPECTED_STELLAR_SDK_VERSION:-v0.8.0}"
+expected_nebu="${EXPECTED_NEBU_VERSION:-v0.6.17}"
 failed=0
 
 for mod in processors/*/go.mod; do
