@@ -1,13 +1,15 @@
 module github.com/withObsrvr/nebu-processor-registry/processors/soroswap-pool-indexer
 
-go 1.25.4
+go 1.26.0
+
+toolchain go1.26.10
 
 require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
-	github.com/stellar/go-stellar-sdk v0.7.3
-	github.com/withObsrvr/nebu v0.6.15
-	golang.org/x/term v0.45.0
+	github.com/stellar/go-stellar-sdk v0.8.0
+	github.com/withObsrvr/nebu v0.6.17
+	golang.org/x/term v0.46.0
 )
 
 require (
@@ -19,7 +21,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/stellar/go-xdr v0.0.0-20260806060815-dc590f17552a // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
-	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )

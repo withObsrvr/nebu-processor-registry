@@ -213,20 +213,22 @@ Full template:
 ```go
 module {MODULE_PATH}
 
-go 1.25.4
+go 1.26.0
 
 require (
-    github.com/withObsrvr/nebu v0.6.13
+    github.com/withObsrvr/nebu v0.6.17
 )
 
 // Add type-specific dependencies:
-// - Origin: github.com/stellar/go-stellar-sdk v0.7.1
+// - Origin: github.com/stellar/go-stellar-sdk v0.8.0
 // - Origin (proto): google.golang.org/protobuf v1.36.11
 // - Sink (postgres): github.com/lib/pq v1.10.9
 // - Sink (nats): github.com/nats-io/nats.go v1.47.0
 ```
 
-Always pin a concrete `github.com/withObsrvr/nebu` version (e.g., `v0.6.13`) in the `require` block — do not write `latest`, which is not a valid Go module version. Check [the nebu releases page](https://github.com/withObsrvr/nebu/releases) for the current tag.
+Always pin a concrete `github.com/withObsrvr/nebu` version (e.g., `v0.6.17`) in the `require` block — do not write `latest`, which is not a valid Go module version. Check [the nebu releases page](https://github.com/withObsrvr/nebu/releases) for the current tag, and `scripts/check-dependency-versions.sh` for the versions this registry currently requires — CI enforces them.
+
+From Protocol 30 ("Bell") onward, `go-stellar-sdk` v0.8.0 or later is **required**, not preferred: CAP-88 adds two `StellarValueExt` union arms, and an older SDK cannot decode a Protocol 30 ledger at all.
 
 ### Step 7: Generate README.md
 
