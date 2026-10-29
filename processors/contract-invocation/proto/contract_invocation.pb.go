@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v6.32.1
-// source: proto/contract_invocation.proto
+// source: contract_invocation.proto
 
 package cipb
 
@@ -50,7 +50,7 @@ type ContractInvocation struct {
 
 func (x *ContractInvocation) Reset() {
 	*x = ContractInvocation{}
-	mi := &file_proto_contract_invocation_proto_msgTypes[0]
+	mi := &file_contract_invocation_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -62,7 +62,7 @@ func (x *ContractInvocation) String() string {
 func (*ContractInvocation) ProtoMessage() {}
 
 func (x *ContractInvocation) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_contract_invocation_proto_msgTypes[0]
+	mi := &file_contract_invocation_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -75,7 +75,7 @@ func (x *ContractInvocation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContractInvocation.ProtoReflect.Descriptor instead.
 func (*ContractInvocation) Descriptor() ([]byte, []int) {
-	return file_proto_contract_invocation_proto_rawDescGZIP(), []int{0}
+	return file_contract_invocation_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *ContractInvocation) GetMeta() *EventMeta {
@@ -150,20 +150,26 @@ func (x *ContractInvocation) GetTtlExtensions() []*TtlExtension {
 
 // EventMeta contains metadata about the invocation
 type EventMeta struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	LedgerSequence   uint32                 `protobuf:"varint,1,opt,name=ledger_sequence,json=ledgerSequence,proto3" json:"ledger_sequence,omitempty"`
-	ClosedAtUnix     int64                  `protobuf:"varint,2,opt,name=closed_at_unix,json=closedAtUnix,proto3" json:"closed_at_unix,omitempty"`
-	TxHash           string                 `protobuf:"bytes,3,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
-	TransactionIndex uint32                 `protobuf:"varint,4,opt,name=transaction_index,json=transactionIndex,proto3" json:"transaction_index,omitempty"`
-	OperationIndex   uint32                 `protobuf:"varint,5,opt,name=operation_index,json=operationIndex,proto3" json:"operation_index,omitempty"`
-	InSuccessfulTx   bool                   `protobuf:"varint,6,opt,name=in_successful_tx,json=inSuccessfulTx,proto3" json:"in_successful_tx,omitempty"`
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	LedgerSequence uint32                 `protobuf:"varint,1,opt,name=ledger_sequence,json=ledgerSequence,proto3" json:"ledger_sequence,omitempty"`
+	ClosedAtUnix   int64                  `protobuf:"varint,2,opt,name=closed_at_unix,json=closedAtUnix,proto3" json:"closed_at_unix,omitempty"`
+	// RFC 3339 UTC close time with millisecond precision, e.g.
+	// "2026-10-28T06:52:40.000Z". Prefer this over closed_at_unix:
+	// from Protocol 30 (CAP-88) consecutive ledgers can close within
+	// the same whole second, so a seconds value cannot order or
+	// bucket them. See docs/adr/0001-millisecond-close-time.md.
+	ClosedAt         string `protobuf:"bytes,7,opt,name=closed_at,json=closedAt,proto3" json:"closed_at,omitempty"`
+	TxHash           string `protobuf:"bytes,3,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	TransactionIndex uint32 `protobuf:"varint,4,opt,name=transaction_index,json=transactionIndex,proto3" json:"transaction_index,omitempty"`
+	OperationIndex   uint32 `protobuf:"varint,5,opt,name=operation_index,json=operationIndex,proto3" json:"operation_index,omitempty"`
+	InSuccessfulTx   bool   `protobuf:"varint,6,opt,name=in_successful_tx,json=inSuccessfulTx,proto3" json:"in_successful_tx,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
 func (x *EventMeta) Reset() {
 	*x = EventMeta{}
-	mi := &file_proto_contract_invocation_proto_msgTypes[1]
+	mi := &file_contract_invocation_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -175,7 +181,7 @@ func (x *EventMeta) String() string {
 func (*EventMeta) ProtoMessage() {}
 
 func (x *EventMeta) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_contract_invocation_proto_msgTypes[1]
+	mi := &file_contract_invocation_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -188,7 +194,7 @@ func (x *EventMeta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventMeta.ProtoReflect.Descriptor instead.
 func (*EventMeta) Descriptor() ([]byte, []int) {
-	return file_proto_contract_invocation_proto_rawDescGZIP(), []int{1}
+	return file_contract_invocation_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *EventMeta) GetLedgerSequence() uint32 {
@@ -203,6 +209,13 @@ func (x *EventMeta) GetClosedAtUnix() int64 {
 		return x.ClosedAtUnix
 	}
 	return 0
+}
+
+func (x *EventMeta) GetClosedAt() string {
+	if x != nil {
+		return x.ClosedAt
+	}
+	return ""
 }
 
 func (x *EventMeta) GetTxHash() string {
@@ -252,7 +265,7 @@ type DiagnosticEvent struct {
 
 func (x *DiagnosticEvent) Reset() {
 	*x = DiagnosticEvent{}
-	mi := &file_proto_contract_invocation_proto_msgTypes[2]
+	mi := &file_contract_invocation_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -264,7 +277,7 @@ func (x *DiagnosticEvent) String() string {
 func (*DiagnosticEvent) ProtoMessage() {}
 
 func (x *DiagnosticEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_contract_invocation_proto_msgTypes[2]
+	mi := &file_contract_invocation_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -277,7 +290,7 @@ func (x *DiagnosticEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiagnosticEvent.ProtoReflect.Descriptor instead.
 func (*DiagnosticEvent) Descriptor() ([]byte, []int) {
-	return file_proto_contract_invocation_proto_rawDescGZIP(), []int{2}
+	return file_contract_invocation_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *DiagnosticEvent) GetContractId() string {
@@ -340,7 +353,7 @@ type ContractCall struct {
 
 func (x *ContractCall) Reset() {
 	*x = ContractCall{}
-	mi := &file_proto_contract_invocation_proto_msgTypes[3]
+	mi := &file_contract_invocation_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -352,7 +365,7 @@ func (x *ContractCall) String() string {
 func (*ContractCall) ProtoMessage() {}
 
 func (x *ContractCall) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_contract_invocation_proto_msgTypes[3]
+	mi := &file_contract_invocation_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -365,7 +378,7 @@ func (x *ContractCall) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContractCall.ProtoReflect.Descriptor instead.
 func (*ContractCall) Descriptor() ([]byte, []int) {
-	return file_proto_contract_invocation_proto_rawDescGZIP(), []int{3}
+	return file_contract_invocation_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ContractCall) GetFromContract() string {
@@ -443,7 +456,7 @@ type StateChange struct {
 
 func (x *StateChange) Reset() {
 	*x = StateChange{}
-	mi := &file_proto_contract_invocation_proto_msgTypes[4]
+	mi := &file_contract_invocation_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -455,7 +468,7 @@ func (x *StateChange) String() string {
 func (*StateChange) ProtoMessage() {}
 
 func (x *StateChange) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_contract_invocation_proto_msgTypes[4]
+	mi := &file_contract_invocation_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -468,7 +481,7 @@ func (x *StateChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StateChange.ProtoReflect.Descriptor instead.
 func (*StateChange) Descriptor() ([]byte, []int) {
-	return file_proto_contract_invocation_proto_rawDescGZIP(), []int{4}
+	return file_contract_invocation_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *StateChange) GetContractId() string {
@@ -521,7 +534,7 @@ type TtlExtension struct {
 
 func (x *TtlExtension) Reset() {
 	*x = TtlExtension{}
-	mi := &file_proto_contract_invocation_proto_msgTypes[5]
+	mi := &file_contract_invocation_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -533,7 +546,7 @@ func (x *TtlExtension) String() string {
 func (*TtlExtension) ProtoMessage() {}
 
 func (x *TtlExtension) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_contract_invocation_proto_msgTypes[5]
+	mi := &file_contract_invocation_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -546,7 +559,7 @@ func (x *TtlExtension) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TtlExtension.ProtoReflect.Descriptor instead.
 func (*TtlExtension) Descriptor() ([]byte, []int) {
-	return file_proto_contract_invocation_proto_rawDescGZIP(), []int{5}
+	return file_contract_invocation_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TtlExtension) GetContractId() string {
@@ -583,7 +596,7 @@ type GetInvocationsRequest struct {
 
 func (x *GetInvocationsRequest) Reset() {
 	*x = GetInvocationsRequest{}
-	mi := &file_proto_contract_invocation_proto_msgTypes[6]
+	mi := &file_contract_invocation_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -595,7 +608,7 @@ func (x *GetInvocationsRequest) String() string {
 func (*GetInvocationsRequest) ProtoMessage() {}
 
 func (x *GetInvocationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_contract_invocation_proto_msgTypes[6]
+	mi := &file_contract_invocation_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -608,7 +621,7 @@ func (x *GetInvocationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInvocationsRequest.ProtoReflect.Descriptor instead.
 func (*GetInvocationsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_contract_invocation_proto_rawDescGZIP(), []int{6}
+	return file_contract_invocation_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetInvocationsRequest) GetStartLedger() uint32 {
@@ -625,11 +638,11 @@ func (x *GetInvocationsRequest) GetEndLedger() uint32 {
 	return 0
 }
 
-var File_proto_contract_invocation_proto protoreflect.FileDescriptor
+var File_contract_invocation_proto protoreflect.FileDescriptor
 
-const file_proto_contract_invocation_proto_rawDesc = "" +
+const file_contract_invocation_proto_rawDesc = "" +
 	"\n" +
-	"\x1fproto/contract_invocation.proto\x12\x18nebu.contract_invocation\"\xbe\x04\n" +
+	"\x19contract_invocation.proto\x12\x18nebu.contract_invocation\"\xbe\x04\n" +
 	"\x12ContractInvocation\x127\n" +
 	"\x04meta\x18\x01 \x01(\v2#.nebu.contract_invocation.EventMetaR\x04meta\x12\x1f\n" +
 	"\vcontract_id\x18\x02 \x01(\tR\n" +
@@ -644,10 +657,11 @@ const file_proto_contract_invocation_proto_rawDesc = "" +
 	"\x0econtract_calls\x18\b \x03(\v2&.nebu.contract_invocation.ContractCallR\rcontractCalls\x12J\n" +
 	"\rstate_changes\x18\t \x03(\v2%.nebu.contract_invocation.StateChangeR\fstateChanges\x12M\n" +
 	"\x0ettl_extensions\x18\n" +
-	" \x03(\v2&.nebu.contract_invocation.TtlExtensionR\rttlExtensions\"\xf3\x01\n" +
+	" \x03(\v2&.nebu.contract_invocation.TtlExtensionR\rttlExtensions\"\x90\x02\n" +
 	"\tEventMeta\x12'\n" +
 	"\x0fledger_sequence\x18\x01 \x01(\rR\x0eledgerSequence\x12$\n" +
-	"\x0eclosed_at_unix\x18\x02 \x01(\x03R\fclosedAtUnix\x12\x17\n" +
+	"\x0eclosed_at_unix\x18\x02 \x01(\x03R\fclosedAtUnix\x12\x1b\n" +
+	"\tclosed_at\x18\a \x01(\tR\bclosedAt\x12\x17\n" +
 	"\atx_hash\x18\x03 \x01(\tR\x06txHash\x12+\n" +
 	"\x11transaction_index\x18\x04 \x01(\rR\x10transactionIndex\x12'\n" +
 	"\x0foperation_index\x18\x05 \x01(\rR\x0eoperationIndex\x12(\n" +
@@ -693,19 +707,19 @@ const file_proto_contract_invocation_proto_rawDesc = "" +
 	"\x0eGetInvocations\x12/.nebu.contract_invocation.GetInvocationsRequest\x1a,.nebu.contract_invocation.ContractInvocation0\x01BYZWgithub.com/withObsrvr/nebu-processor-registry/processors/contract-invocation/proto;cipbb\x06proto3"
 
 var (
-	file_proto_contract_invocation_proto_rawDescOnce sync.Once
-	file_proto_contract_invocation_proto_rawDescData []byte
+	file_contract_invocation_proto_rawDescOnce sync.Once
+	file_contract_invocation_proto_rawDescData []byte
 )
 
-func file_proto_contract_invocation_proto_rawDescGZIP() []byte {
-	file_proto_contract_invocation_proto_rawDescOnce.Do(func() {
-		file_proto_contract_invocation_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_contract_invocation_proto_rawDesc), len(file_proto_contract_invocation_proto_rawDesc)))
+func file_contract_invocation_proto_rawDescGZIP() []byte {
+	file_contract_invocation_proto_rawDescOnce.Do(func() {
+		file_contract_invocation_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_contract_invocation_proto_rawDesc), len(file_contract_invocation_proto_rawDesc)))
 	})
-	return file_proto_contract_invocation_proto_rawDescData
+	return file_contract_invocation_proto_rawDescData
 }
 
-var file_proto_contract_invocation_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
-var file_proto_contract_invocation_proto_goTypes = []any{
+var file_contract_invocation_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_contract_invocation_proto_goTypes = []any{
 	(*ContractInvocation)(nil),    // 0: nebu.contract_invocation.ContractInvocation
 	(*EventMeta)(nil),             // 1: nebu.contract_invocation.EventMeta
 	(*DiagnosticEvent)(nil),       // 2: nebu.contract_invocation.DiagnosticEvent
@@ -714,7 +728,7 @@ var file_proto_contract_invocation_proto_goTypes = []any{
 	(*TtlExtension)(nil),          // 5: nebu.contract_invocation.TtlExtension
 	(*GetInvocationsRequest)(nil), // 6: nebu.contract_invocation.GetInvocationsRequest
 }
-var file_proto_contract_invocation_proto_depIdxs = []int32{
+var file_contract_invocation_proto_depIdxs = []int32{
 	1, // 0: nebu.contract_invocation.ContractInvocation.meta:type_name -> nebu.contract_invocation.EventMeta
 	2, // 1: nebu.contract_invocation.ContractInvocation.diagnostic_events:type_name -> nebu.contract_invocation.DiagnosticEvent
 	3, // 2: nebu.contract_invocation.ContractInvocation.contract_calls:type_name -> nebu.contract_invocation.ContractCall
@@ -729,26 +743,26 @@ var file_proto_contract_invocation_proto_depIdxs = []int32{
 	0, // [0:5] is the sub-list for field type_name
 }
 
-func init() { file_proto_contract_invocation_proto_init() }
-func file_proto_contract_invocation_proto_init() {
-	if File_proto_contract_invocation_proto != nil {
+func init() { file_contract_invocation_proto_init() }
+func file_contract_invocation_proto_init() {
+	if File_contract_invocation_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_contract_invocation_proto_rawDesc), len(file_proto_contract_invocation_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_contract_invocation_proto_rawDesc), len(file_contract_invocation_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_contract_invocation_proto_goTypes,
-		DependencyIndexes: file_proto_contract_invocation_proto_depIdxs,
-		MessageInfos:      file_proto_contract_invocation_proto_msgTypes,
+		GoTypes:           file_contract_invocation_proto_goTypes,
+		DependencyIndexes: file_contract_invocation_proto_depIdxs,
+		MessageInfos:      file_contract_invocation_proto_msgTypes,
 	}.Build()
-	File_proto_contract_invocation_proto = out.File
-	file_proto_contract_invocation_proto_goTypes = nil
-	file_proto_contract_invocation_proto_depIdxs = nil
+	File_contract_invocation_proto = out.File
+	file_contract_invocation_proto_goTypes = nil
+	file_contract_invocation_proto_depIdxs = nil
 }

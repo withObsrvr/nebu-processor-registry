@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -27,17 +28,17 @@ func NewOrigin(passphrase string) *Origin {
 	}
 }
 
-func (o *Origin) Name() string                            { return "stellar/liquidity-pool-events" }
-func (o *Origin) Type() processor.Type                    { return processor.TypeOrigin }
-func (o *Origin) Out() <-chan *LiquidityPoolEvent         { return o.out }
-func (o *Origin) Close()                                  { close(o.out) }
+func (o *Origin) Name() string                    { return "stellar/liquidity-pool-events" }
+func (o *Origin) Type() processor.Type            { return processor.TypeOrigin }
+func (o *Origin) Out() <-chan *LiquidityPoolEvent { return o.out }
+func (o *Origin) Close()                          { close(o.out) }
 
 // ProcessLedger extracts LP operations from the ledger. Per-ledger
 // errors are reported via processor.ReportWarning; the pipeline
 // continues (streams-never-throw).
 func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	sequence := ledger.LedgerSequence()
-	closeTime := int64(ledger.LedgerHeaderHistoryEntry().Header.ScpValue.CloseTime)
+	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
 
 	// Build tx success map
 	txSuccessMap := make(map[string]bool)
@@ -91,9 +92,9 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 
 			switch op.Body.Type {
 			case xdr.OperationTypeLiquidityPoolDeposit:
-				event = o.processDeposit(tx, opIndex, op, sequence, closeTime, txHash, txIndex, successful)
+				event = o.processDeposit(tx, opIndex, op, sequence, closeTimeMs, txHash, txIndex, successful)
 			case xdr.OperationTypeLiquidityPoolWithdraw:
-				event = o.processWithdraw(tx, opIndex, op, sequence, closeTime, txHash, txIndex, successful)
+				event = o.processWithdraw(tx, opIndex, op, sequence, closeTimeMs, txHash, txIndex, successful)
 			}
 
 			if event != nil {
@@ -106,7 +107,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 		}
 
 		// Check for path payments routed through LPs (trades)
-		events := o.processPathPaymentTrades(tx, sequence, closeTime, txHash, txIndex, successful)
+		events := o.processPathPaymentTrades(tx, sequence, closeTimeMs, txHash, txIndex, successful)
 		for _, event := range events {
 			select {
 			case <-ctx.Done():
@@ -122,7 +123,7 @@ func (o *Origin) processDeposit(
 	opIndex int,
 	op xdr.Operation,
 	sequence uint32,
-	closeTime int64,
+	closeTimeMs int64,
 	txHash string,
 	txIndex uint32,
 	successful bool,
@@ -142,7 +143,8 @@ func (o *Origin) processDeposit(
 		},
 		Meta: &EventMeta{
 			LedgerSequence:   sequence,
-			ClosedAtUnix:     closeTime,
+			ClosedAtUnix:     closeTimeMs / 1000,
+			ClosedAt:         closedAtRFC3339(closeTimeMs),
 			TxHash:           txHash,
 			TransactionIndex: txIndex,
 			OperationIndex:   uint32(opIndex),
@@ -161,7 +163,7 @@ func (o *Origin) processWithdraw(
 	opIndex int,
 	op xdr.Operation,
 	sequence uint32,
-	closeTime int64,
+	closeTimeMs int64,
 	txHash string,
 	txIndex uint32,
 	successful bool,
@@ -182,7 +184,8 @@ func (o *Origin) processWithdraw(
 		},
 		Meta: &EventMeta{
 			LedgerSequence:   sequence,
-			ClosedAtUnix:     closeTime,
+			ClosedAtUnix:     closeTimeMs / 1000,
+			ClosedAt:         closedAtRFC3339(closeTimeMs),
 			TxHash:           txHash,
 			TransactionIndex: txIndex,
 			OperationIndex:   uint32(opIndex),
@@ -198,7 +201,7 @@ func (o *Origin) processWithdraw(
 func (o *Origin) processPathPaymentTrades(
 	tx ingest.LedgerTransaction,
 	sequence uint32,
-	closeTime int64,
+	closeTimeMs int64,
 	txHash string,
 	txIndex uint32,
 	successful bool,
@@ -259,7 +262,8 @@ func (o *Origin) processPathPaymentTrades(
 			},
 			Meta: &EventMeta{
 				LedgerSequence:   sequence,
-				ClosedAtUnix:     closeTime,
+				ClosedAtUnix:     closeTimeMs / 1000,
+				ClosedAt:         closedAtRFC3339(closeTimeMs),
 				TxHash:           txHash,
 				TransactionIndex: txIndex,
 				InSuccessfulTx:   successful,
@@ -389,4 +393,14 @@ func assetToPoolAsset(asset xdr.Asset) *PoolAsset {
 		pa.AssetIssuer = a.Issuer.Address()
 	}
 	return pa
+}
+
+// closedAtRFC3339 renders a millisecond Unix timestamp as the RFC 3339 UTC
+// string the envelope's closed_at field carries (DATA-3).
+//
+// Fixed-width with three decimal places rather than time.RFC3339Nano, which
+// drops trailing zeros: uniform width keeps values lexicographically
+// sortable and lets a human line them up.
+func closedAtRFC3339(ms int64) string {
+	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }

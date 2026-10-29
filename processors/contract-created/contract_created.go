@@ -45,7 +45,7 @@ func (o *Origin) Close() { o.emitter.Close() }
 
 func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	ledgerSeq := ledger.LedgerSequence()
-	closeTime := int64(ledger.LedgerHeaderHistoryEntry().Header.ScpValue.CloseTime)
+	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
 
 	txReader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
 	if err != nil {
@@ -81,7 +81,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 				continue
 			}
 
-			ev := o.buildContractCreatedEvent(tx, changes, op, ledgerSeq, closeTime, txHash, txIndex, int32(opIndex))
+			ev := o.buildContractCreatedEvent(tx, changes, op, ledgerSeq, closeTimeMs, txHash, txIndex, int32(opIndex))
 			if ev == nil {
 				continue
 			}
@@ -101,7 +101,7 @@ func (o *Origin) buildContractCreatedEvent(
 	changes []ingest.Change,
 	op xdr.Operation,
 	ledgerSeq uint32,
-	closeTime int64,
+	closeTimeMs int64,
 	txHash string,
 	txIndex uint32,
 	opIndex int32,
@@ -171,7 +171,8 @@ func (o *Origin) buildContractCreatedEvent(
 	return &ContractCreatedEvent{
 		Meta: &EventMeta{
 			LedgerSequence:   ledgerSeq,
-			ClosedAtUnix:     closeTime,
+			ClosedAtUnix:     closeTimeMs / 1000,
+			ClosedAt:         closedAtRFC3339(closeTimeMs),
 			TxHash:           txHash,
 			TransactionIndex: txIndex,
 			OperationIndex:   opIndex,
@@ -709,4 +710,14 @@ func scValToString(val xdr.ScVal) string {
 		return info.Type
 	}
 	return val.Type.String()
+}
+
+// closedAtRFC3339 renders a millisecond Unix timestamp as the RFC 3339 UTC
+// string the envelope's closed_at field carries (DATA-3).
+//
+// Fixed-width with three decimal places rather than time.RFC3339Nano, which
+// drops trailing zeros: uniform width keeps values lexicographically
+// sortable and lets a human line them up.
+func closedAtRFC3339(ms int64) string {
+	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }

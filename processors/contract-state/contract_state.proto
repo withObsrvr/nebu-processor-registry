@@ -52,6 +52,12 @@ message EventMeta {
 
   // Ledger close timestamp (Unix seconds)
   int64 closed_at_unix = 2;
+  // RFC 3339 UTC close time with millisecond precision, e.g.
+  // "2026-10-28T06:52:40.000Z". Prefer this over closed_at_unix:
+  // from Protocol 30 (CAP-88) consecutive ledgers can close within
+  // the same whole second, so a seconds value cannot order or
+  // bucket them. See docs/adr/0001-millisecond-close-time.md.
+  string closed_at = 5;
 
   // Transaction hash (hex-encoded)
   string tx_hash = 3;

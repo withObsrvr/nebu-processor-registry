@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -79,7 +80,8 @@ func (o *Origin) buildEvent(
 		MaxFeeStroops:     maxFee(envelope),
 		Meta: &EventMeta{
 			LedgerSequence:   ledger.LedgerSequence(),
-			ClosedAtUnix:     ledger.LedgerCloseTime(),
+			ClosedAtUnix:     processor.LedgerCloseTimeMs(ledger) / 1000,
+			ClosedAt:         closedAtRFC3339(processor.LedgerCloseTimeMs(ledger)),
 			TxHash:           ledger.TransactionHash(index).HexString(),
 			TransactionIndex: uint32(index),
 		},
@@ -319,4 +321,14 @@ func canonicalScErrorType(errorType xdr.ScErrorType) string {
 	default:
 		return fmt.Sprintf("unknown_%d", int32(errorType))
 	}
+}
+
+// closedAtRFC3339 renders a millisecond Unix timestamp as the RFC 3339 UTC
+// string the envelope's closed_at field carries (DATA-3).
+//
+// Fixed-width with three decimal places rather than time.RFC3339Nano, which
+// drops trailing zeros: uniform width keeps values lexicographically
+// sortable and lets a human line them up.
+func closedAtRFC3339(ms int64) string {
+	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }

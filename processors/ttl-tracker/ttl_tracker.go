@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -50,7 +51,7 @@ func (o *Origin) Close() {
 // the next ledger (streams-never-throw).
 func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	sequence := ledger.LedgerSequence()
-	closeTime := int64(ledger.LedgerHeaderHistoryEntry().Header.ScpValue.CloseTime)
+	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
 
 	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
 	if err != nil {
@@ -87,7 +88,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 				continue
 			}
 
-			event := o.processTtlChange(change, sequence, closeTime, txHash, txIndex)
+			event := o.processTtlChange(change, sequence, closeTimeMs, txHash, txIndex)
 			if event != nil {
 				// Dedup key: keyHash within this ledger
 				seen[event.KeyHash] = event
@@ -108,7 +109,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 func (o *Origin) processTtlChange(
 	change ingest.Change,
 	sequence uint32,
-	closeTime int64,
+	closeTimeMs int64,
 	txHash string,
 	txIndex uint32,
 ) *TtlEvent {
@@ -154,9 +155,20 @@ func (o *Origin) processTtlChange(
 		Operation:        operation,
 		Meta: &EventMeta{
 			LedgerSequence:   sequence,
-			ClosedAtUnix:     closeTime,
+			ClosedAtUnix:     closeTimeMs / 1000,
+			ClosedAt:         closedAtRFC3339(closeTimeMs),
 			TxHash:           txHash,
 			TransactionIndex: txIndex,
 		},
 	}
+}
+
+// closedAtRFC3339 renders a millisecond Unix timestamp as the RFC 3339 UTC
+// string the envelope's closed_at field carries (DATA-3).
+//
+// Fixed-width with three decimal places rather than time.RFC3339Nano, which
+// drops trailing zeros: uniform width keeps values lexicographically
+// sortable and lets a human line them up.
+func closedAtRFC3339(ms int64) string {
+	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }

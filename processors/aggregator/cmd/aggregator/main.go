@@ -163,8 +163,16 @@ func formatFloat(f float64) string {
 }
 
 func extractTimestamp(event map[string]interface{}) time.Time {
-	// Try meta.closedAtUnix (origin processors with proto)
 	if meta, ok := event["meta"].(map[string]interface{}); ok {
+		// Prefer meta.closedAt: RFC 3339 with millisecond precision. From
+		// Protocol 30 (CAP-88) consecutive ledgers can close within the same
+		// whole second, so bucketing on a seconds value silently merges them.
+		if raw, ok := meta["closedAt"].(string); ok && raw != "" {
+			if t, err := time.Parse(time.RFC3339, raw); err == nil {
+				return t
+			}
+		}
+		// Fall back to closedAtUnix for processors not yet rebuilt.
 		if v := toFloat64(meta["closedAtUnix"]); v != 0 {
 			return time.Unix(int64(v), 0)
 		}
@@ -227,9 +235,16 @@ func toFloat64(val interface{}) float64 {
 		return f
 	case int64:
 		return float64(v)
+	case string:
+		// protojson renders int64 as a JSON string, so proto-origin events
+		// deliver closedAtUnix as "1765158311" rather than a number.
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return 0
+		}
+		return f
 	case int:
 		return float64(v)
 	}
 	return 0
 }
-

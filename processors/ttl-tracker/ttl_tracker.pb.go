@@ -106,6 +106,12 @@ type EventMeta struct {
 	LedgerSequence uint32 `protobuf:"varint,1,opt,name=ledger_sequence,json=ledgerSequence,proto3" json:"ledger_sequence,omitempty"`
 	// Ledger close timestamp (Unix seconds)
 	ClosedAtUnix int64 `protobuf:"varint,2,opt,name=closed_at_unix,json=closedAtUnix,proto3" json:"closed_at_unix,omitempty"`
+	// RFC 3339 UTC close time with millisecond precision, e.g.
+	// "2026-10-28T06:52:40.000Z". Prefer this over closed_at_unix:
+	// from Protocol 30 (CAP-88) consecutive ledgers can close within
+	// the same whole second, so a seconds value cannot order or
+	// bucket them. See docs/adr/0001-millisecond-close-time.md.
+	ClosedAt string `protobuf:"bytes,5,opt,name=closed_at,json=closedAt,proto3" json:"closed_at,omitempty"`
 	// Transaction hash (hex-encoded)
 	TxHash string `protobuf:"bytes,3,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
 	// Transaction index within the ledger
@@ -158,6 +164,13 @@ func (x *EventMeta) GetClosedAtUnix() int64 {
 	return 0
 }
 
+func (x *EventMeta) GetClosedAt() string {
+	if x != nil {
+		return x.ClosedAt
+	}
+	return ""
+}
+
 func (x *EventMeta) GetTxHash() string {
 	if x != nil {
 		return x.TxHash
@@ -182,10 +195,11 @@ const file_ttl_tracker_proto_rawDesc = "" +
 	"\x11expiration_ledger\x18\x02 \x01(\rR\x10expirationLedger\x12\x1c\n" +
 	"\toperation\x18\x03 \x01(\tR\toperation\x12*\n" +
 	"\x04meta\x18\n" +
-	" \x01(\v2\x16.ttl_tracker.EventMetaR\x04meta\"\xa0\x01\n" +
+	" \x01(\v2\x16.ttl_tracker.EventMetaR\x04meta\"\xbd\x01\n" +
 	"\tEventMeta\x12'\n" +
 	"\x0fledger_sequence\x18\x01 \x01(\rR\x0eledgerSequence\x12$\n" +
-	"\x0eclosed_at_unix\x18\x02 \x01(\x03R\fclosedAtUnix\x12\x17\n" +
+	"\x0eclosed_at_unix\x18\x02 \x01(\x03R\fclosedAtUnix\x12\x1b\n" +
+	"\tclosed_at\x18\x05 \x01(\tR\bclosedAt\x12\x17\n" +
 	"\atx_hash\x18\x03 \x01(\tR\x06txHash\x12+\n" +
 	"\x11transaction_index\x18\x04 \x01(\rR\x10transactionIndexBFZDgithub.com/withObsrvr/nebu-processor-registry/processors/ttl-trackerb\x06proto3"
 

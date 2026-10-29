@@ -101,7 +101,7 @@ func (o *Origin) Close() { o.emitter.Close() }
 
 func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	ledgerSeq := ledger.LedgerSequence()
-	closeTime := int64(ledger.LedgerHeaderHistoryEntry().Header.ScpValue.CloseTime)
+	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
 
 	txReader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
 	if err != nil {
@@ -127,7 +127,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 		if txEvents, err := tx.GetTransactionEvents(); err == nil {
 			for opIndex, opEvents := range txEvents.OperationEvents {
 				for eventIndex, event := range opEvents {
-					ev := o.buildFromContractEvent(event, ledgerSeq, closeTime, txHash, txIndex, int32(opIndex), int32(eventIndex), successful)
+					ev := o.buildFromContractEvent(event, ledgerSeq, closeTimeMs, txHash, txIndex, int32(opIndex), int32(eventIndex), successful)
 					if ev != nil {
 						select {
 						case <-ctx.Done():
@@ -139,7 +139,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 				}
 			}
 			for eventIndex, txEvent := range txEvents.TransactionEvents {
-				ev := o.buildFromContractEvent(txEvent.Event, ledgerSeq, closeTime, txHash, txIndex, -1, int32(eventIndex), successful)
+				ev := o.buildFromContractEvent(txEvent.Event, ledgerSeq, closeTimeMs, txHash, txIndex, -1, int32(eventIndex), successful)
 				if ev != nil {
 					select {
 					case <-ctx.Done():
@@ -155,7 +155,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 			if op.Body.Type != xdr.OperationTypeInvokeHostFunction {
 				continue
 			}
-			ev := o.buildFromInvocation(op, ledgerSeq, closeTime, txHash, txIndex, int32(opIndex), successful)
+			ev := o.buildFromInvocation(op, ledgerSeq, closeTimeMs, txHash, txIndex, int32(opIndex), successful)
 			if ev != nil {
 				select {
 				case <-ctx.Done():
@@ -168,7 +168,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 
 		if changes, err := tx.GetChanges(); err == nil {
 			for _, change := range changes {
-				ev := o.buildFromContractDataChange(change, ledgerSeq, closeTime, txHash, txIndex, successful)
+				ev := o.buildFromContractDataChange(change, ledgerSeq, closeTimeMs, txHash, txIndex, successful)
 				if ev != nil {
 					select {
 					case <-ctx.Done():
@@ -185,7 +185,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 func (o *Origin) buildFromContractEvent(
 	event xdr.ContractEvent,
 	ledgerSeq uint32,
-	closeTime int64,
+	closeTimeMs int64,
 	txHash string,
 	txIndex uint32,
 	opIndex int32,
@@ -228,7 +228,8 @@ func (o *Origin) buildFromContractEvent(
 	ev := &NftEvent{
 		Meta: &EventMeta{
 			LedgerSequence:   ledgerSeq,
-			ClosedAtUnix:     closeTime,
+			ClosedAtUnix:     closeTimeMs / 1000,
+			ClosedAt:         closedAtRFC3339(closeTimeMs),
 			TxHash:           txHash,
 			TransactionIndex: txIndex,
 			OperationIndex:   opIndex,
@@ -275,7 +276,7 @@ func (o *Origin) buildFromContractEvent(
 func (o *Origin) buildFromInvocation(
 	op xdr.Operation,
 	ledgerSeq uint32,
-	closeTime int64,
+	closeTimeMs int64,
 	txHash string,
 	txIndex uint32,
 	opIndex int32,
@@ -323,7 +324,8 @@ func (o *Origin) buildFromInvocation(
 	return &NftEvent{
 		Meta: &EventMeta{
 			LedgerSequence:   ledgerSeq,
-			ClosedAtUnix:     closeTime,
+			ClosedAtUnix:     closeTimeMs / 1000,
+			ClosedAt:         closedAtRFC3339(closeTimeMs),
 			TxHash:           txHash,
 			TransactionIndex: txIndex,
 			OperationIndex:   opIndex,
@@ -357,7 +359,7 @@ func (o *Origin) buildFromInvocation(
 func (o *Origin) buildFromContractDataChange(
 	change ingest.Change,
 	ledgerSeq uint32,
-	closeTime int64,
+	closeTimeMs int64,
 	txHash string,
 	txIndex uint32,
 	successful bool,
@@ -440,7 +442,8 @@ func (o *Origin) buildFromContractDataChange(
 	ev := &NftEvent{
 		Meta: &EventMeta{
 			LedgerSequence:   ledgerSeq,
-			ClosedAtUnix:     closeTime,
+			ClosedAtUnix:     closeTimeMs / 1000,
+			ClosedAt:         closedAtRFC3339(closeTimeMs),
 			TxHash:           txHash,
 			TransactionIndex: txIndex,
 			OperationIndex:   -1,
@@ -796,4 +799,14 @@ func scValToString(val xdr.ScVal) string {
 		return "{" + strings.Join(parts, ",") + "}"
 	}
 	return val.Type.String()
+}
+
+// closedAtRFC3339 renders a millisecond Unix timestamp as the RFC 3339 UTC
+// string the envelope's closed_at field carries (DATA-3).
+//
+// The layout is fixed-width with exactly three decimal places rather than
+// time.RFC3339Nano, which drops trailing zeros: a uniform width keeps values
+// lexicographically sortable and lets a human line them up.
+func closedAtRFC3339(ms int64) string {
+	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }

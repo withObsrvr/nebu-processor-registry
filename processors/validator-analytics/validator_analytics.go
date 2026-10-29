@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"time"
 
 	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/withObsrvr/nebu/pkg/processor"
@@ -89,7 +90,8 @@ func summarizeLedger(ledger xdr.LedgerCloseMeta, networkPassphrase string) *Vali
 	activity := summarizeActivity(transactions)
 	return &ValidatorLedgerAnalytics{
 		LedgerSequence:                ledger.LedgerSequence(),
-		ClosedAtUnix:                  ledger.LedgerCloseTime(),
+		ClosedAtUnix:                  processor.LedgerCloseTimeMs(ledger) / 1000,
+		ClosedAt:                      closedAtRFC3339(processor.LedgerCloseTimeMs(ledger)),
 		LedgerHash:                    ledger.LedgerHash().HexString(),
 		PreviousLedgerHash:            ledger.PreviousLedgerHash().HexString(),
 		ProtocolVersion:               uint32(header.LedgerVersion),
@@ -195,4 +197,14 @@ func incrementCategory(counts *OperationCategoryCounts, category operationCatego
 	case categoryOther:
 		counts.Other++
 	}
+}
+
+// closedAtRFC3339 renders a millisecond Unix timestamp as the RFC 3339 UTC
+// string the envelope's closed_at field carries (DATA-3).
+//
+// Fixed-width with three decimal places rather than time.RFC3339Nano, which
+// drops trailing zeros: uniform width keeps values lexicographically
+// sortable and lets a human line them up.
+func closedAtRFC3339(ms int64) string {
+	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }
