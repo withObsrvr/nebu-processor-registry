@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -27,17 +28,17 @@ func NewOrigin(passphrase string) *Origin {
 	}
 }
 
-func (o *Origin) Name() string                    { return "stellar/account-effects" }
-func (o *Origin) Type() processor.Type            { return processor.TypeOrigin }
-func (o *Origin) Out() <-chan *AccountEffect       { return o.out }
-func (o *Origin) Close()                          { close(o.out) }
+func (o *Origin) Name() string               { return "stellar/account-effects" }
+func (o *Origin) Type() processor.Type       { return processor.TypeOrigin }
+func (o *Origin) Out() <-chan *AccountEffect { return o.out }
+func (o *Origin) Close()                     { close(o.out) }
 
 // ProcessLedger extracts account effects from the ledger. Per-ledger
 // errors are reported via processor.ReportWarning; the pipeline
 // continues (streams-never-throw).
 func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	sequence := ledger.LedgerSequence()
-	closeTime := int64(ledger.LedgerHeaderHistoryEntry().Header.ScpValue.CloseTime)
+	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
 
 	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
 	if err != nil {
@@ -66,7 +67,8 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 			account := sourceAccount(op, tx)
 			meta := &EventMeta{
 				LedgerSequence:   sequence,
-				ClosedAtUnix:     closeTime,
+				ClosedAtUnix:     closeTimeMs / 1000,
+				ClosedAt:         closedAtRFC3339(closeTimeMs),
 				TxHash:           txHash,
 				TransactionIndex: txIndex,
 				OperationIndex:   uint32(opIndex),
@@ -84,7 +86,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 		}
 
 		// Extract effects from ledger changes (trustline, offer, data lifecycle)
-		changeEffects := o.extractChangeEffects(tx, sequence, closeTime, txHash, txIndex, successful)
+		changeEffects := o.extractChangeEffects(tx, sequence, closeTimeMs, txHash, txIndex, successful)
 		for _, effect := range changeEffects {
 			select {
 			case <-ctx.Done():
@@ -245,7 +247,7 @@ func (o *Origin) extractEffects(op xdr.Operation, account string, meta *EventMet
 func (o *Origin) extractChangeEffects(
 	tx ingest.LedgerTransaction,
 	sequence uint32,
-	closeTime int64,
+	closeTimeMs int64,
 	txHash string,
 	txIndex uint32,
 	successful bool,
@@ -260,7 +262,8 @@ func (o *Origin) extractChangeEffects(
 	for _, change := range changes {
 		meta := &EventMeta{
 			LedgerSequence:   sequence,
-			ClosedAtUnix:     closeTime,
+			ClosedAtUnix:     closeTimeMs / 1000,
+			ClosedAt:         closedAtRFC3339(closeTimeMs),
 			TxHash:           txHash,
 			TransactionIndex: txIndex,
 			InSuccessfulTx:   successful,
@@ -353,4 +356,14 @@ func toJSON(v interface{}) string {
 		return "{}"
 	}
 	return string(data)
+}
+
+// closedAtRFC3339 renders a millisecond Unix timestamp as the RFC 3339 UTC
+// string the envelope's closed_at field carries (DATA-3).
+//
+// Fixed-width with three decimal places rather than time.RFC3339Nano, which
+// drops trailing zeros: uniform width keeps values lexicographically
+// sortable and lets a human line them up.
+func closedAtRFC3339(ms int64) string {
+	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }

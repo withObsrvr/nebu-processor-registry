@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v6.32.1
-// source: proto/token_transfer_service.proto
+// source: token_transfer_service.proto
 
 package ttpb
 
@@ -34,7 +34,7 @@ type GetEventsRequest struct {
 
 func (x *GetEventsRequest) Reset() {
 	*x = GetEventsRequest{}
-	mi := &file_proto_token_transfer_service_proto_msgTypes[0]
+	mi := &file_token_transfer_service_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -46,7 +46,7 @@ func (x *GetEventsRequest) String() string {
 func (*GetEventsRequest) ProtoMessage() {}
 
 func (x *GetEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_token_transfer_service_proto_msgTypes[0]
+	mi := &file_token_transfer_service_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -59,7 +59,7 @@ func (x *GetEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetEventsRequest.ProtoReflect.Descriptor instead.
 func (*GetEventsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_token_transfer_service_proto_rawDescGZIP(), []int{0}
+	return file_token_transfer_service_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *GetEventsRequest) GetStartLedger() uint32 {
@@ -99,7 +99,7 @@ type TokenTransferEvent struct {
 
 func (x *TokenTransferEvent) Reset() {
 	*x = TokenTransferEvent{}
-	mi := &file_proto_token_transfer_service_proto_msgTypes[1]
+	mi := &file_token_transfer_service_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -111,7 +111,7 @@ func (x *TokenTransferEvent) String() string {
 func (*TokenTransferEvent) ProtoMessage() {}
 
 func (x *TokenTransferEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_token_transfer_service_proto_msgTypes[1]
+	mi := &file_token_transfer_service_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -124,7 +124,7 @@ func (x *TokenTransferEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenTransferEvent.ProtoReflect.Descriptor instead.
 func (*TokenTransferEvent) Descriptor() ([]byte, []int) {
-	return file_proto_token_transfer_service_proto_rawDescGZIP(), []int{1}
+	return file_token_transfer_service_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *TokenTransferEvent) GetMeta() *EventMeta {
@@ -221,21 +221,27 @@ func (*TokenTransferEvent_Clawback) isTokenTransferEvent_Event() {}
 func (*TokenTransferEvent_Fee) isTokenTransferEvent_Event() {}
 
 type EventMeta struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	LedgerSequence   uint32                 `protobuf:"varint,1,opt,name=ledger_sequence,json=ledgerSequence,proto3" json:"ledger_sequence,omitempty"`
-	ClosedAtUnix     int64                  `protobuf:"varint,2,opt,name=closed_at_unix,json=closedAtUnix,proto3" json:"closed_at_unix,omitempty"`
-	TxHash           string                 `protobuf:"bytes,3,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
-	TransactionIndex uint32                 `protobuf:"varint,4,opt,name=transaction_index,json=transactionIndex,proto3" json:"transaction_index,omitempty"`
-	OperationIndex   uint32                 `protobuf:"varint,5,opt,name=operation_index,json=operationIndex,proto3" json:"operation_index,omitempty"`
-	ContractAddress  string                 `protobuf:"bytes,6,opt,name=contract_address,json=contractAddress,proto3" json:"contract_address,omitempty"`
-	InSuccessfulTx   bool                   `protobuf:"varint,7,opt,name=in_successful_tx,json=inSuccessfulTx,proto3" json:"in_successful_tx,omitempty"`
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	LedgerSequence uint32                 `protobuf:"varint,1,opt,name=ledger_sequence,json=ledgerSequence,proto3" json:"ledger_sequence,omitempty"`
+	ClosedAtUnix   int64                  `protobuf:"varint,2,opt,name=closed_at_unix,json=closedAtUnix,proto3" json:"closed_at_unix,omitempty"`
+	// RFC 3339 UTC close time with millisecond precision, e.g.
+	// "2026-10-28T06:52:40.000Z". Prefer this over closed_at_unix:
+	// from Protocol 30 (CAP-88) consecutive ledgers can close within
+	// the same whole second, so a seconds value cannot order or
+	// bucket them. See docs/adr/0001-millisecond-close-time.md.
+	ClosedAt         string `protobuf:"bytes,8,opt,name=closed_at,json=closedAt,proto3" json:"closed_at,omitempty"`
+	TxHash           string `protobuf:"bytes,3,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	TransactionIndex uint32 `protobuf:"varint,4,opt,name=transaction_index,json=transactionIndex,proto3" json:"transaction_index,omitempty"`
+	OperationIndex   uint32 `protobuf:"varint,5,opt,name=operation_index,json=operationIndex,proto3" json:"operation_index,omitempty"`
+	ContractAddress  string `protobuf:"bytes,6,opt,name=contract_address,json=contractAddress,proto3" json:"contract_address,omitempty"`
+	InSuccessfulTx   bool   `protobuf:"varint,7,opt,name=in_successful_tx,json=inSuccessfulTx,proto3" json:"in_successful_tx,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
 func (x *EventMeta) Reset() {
 	*x = EventMeta{}
-	mi := &file_proto_token_transfer_service_proto_msgTypes[2]
+	mi := &file_token_transfer_service_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -247,7 +253,7 @@ func (x *EventMeta) String() string {
 func (*EventMeta) ProtoMessage() {}
 
 func (x *EventMeta) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_token_transfer_service_proto_msgTypes[2]
+	mi := &file_token_transfer_service_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -260,7 +266,7 @@ func (x *EventMeta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventMeta.ProtoReflect.Descriptor instead.
 func (*EventMeta) Descriptor() ([]byte, []int) {
-	return file_proto_token_transfer_service_proto_rawDescGZIP(), []int{2}
+	return file_token_transfer_service_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *EventMeta) GetLedgerSequence() uint32 {
@@ -275,6 +281,13 @@ func (x *EventMeta) GetClosedAtUnix() int64 {
 		return x.ClosedAtUnix
 	}
 	return 0
+}
+
+func (x *EventMeta) GetClosedAt() string {
+	if x != nil {
+		return x.ClosedAt
+	}
+	return ""
 }
 
 func (x *EventMeta) GetTxHash() string {
@@ -325,7 +338,7 @@ type Transfer struct {
 
 func (x *Transfer) Reset() {
 	*x = Transfer{}
-	mi := &file_proto_token_transfer_service_proto_msgTypes[3]
+	mi := &file_token_transfer_service_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -337,7 +350,7 @@ func (x *Transfer) String() string {
 func (*Transfer) ProtoMessage() {}
 
 func (x *Transfer) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_token_transfer_service_proto_msgTypes[3]
+	mi := &file_token_transfer_service_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -350,7 +363,7 @@ func (x *Transfer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Transfer.ProtoReflect.Descriptor instead.
 func (*Transfer) Descriptor() ([]byte, []int) {
-	return file_proto_token_transfer_service_proto_rawDescGZIP(), []int{3}
+	return file_token_transfer_service_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Transfer) GetFrom() string {
@@ -400,7 +413,7 @@ type Mint struct {
 
 func (x *Mint) Reset() {
 	*x = Mint{}
-	mi := &file_proto_token_transfer_service_proto_msgTypes[4]
+	mi := &file_token_transfer_service_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -412,7 +425,7 @@ func (x *Mint) String() string {
 func (*Mint) ProtoMessage() {}
 
 func (x *Mint) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_token_transfer_service_proto_msgTypes[4]
+	mi := &file_token_transfer_service_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -425,7 +438,7 @@ func (x *Mint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Mint.ProtoReflect.Descriptor instead.
 func (*Mint) Descriptor() ([]byte, []int) {
-	return file_proto_token_transfer_service_proto_rawDescGZIP(), []int{4}
+	return file_token_transfer_service_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Mint) GetTo() string {
@@ -468,7 +481,7 @@ type Burn struct {
 
 func (x *Burn) Reset() {
 	*x = Burn{}
-	mi := &file_proto_token_transfer_service_proto_msgTypes[5]
+	mi := &file_token_transfer_service_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -480,7 +493,7 @@ func (x *Burn) String() string {
 func (*Burn) ProtoMessage() {}
 
 func (x *Burn) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_token_transfer_service_proto_msgTypes[5]
+	mi := &file_token_transfer_service_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -493,7 +506,7 @@ func (x *Burn) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Burn.ProtoReflect.Descriptor instead.
 func (*Burn) Descriptor() ([]byte, []int) {
-	return file_proto_token_transfer_service_proto_rawDescGZIP(), []int{5}
+	return file_token_transfer_service_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Burn) GetFrom() string {
@@ -536,7 +549,7 @@ type Clawback struct {
 
 func (x *Clawback) Reset() {
 	*x = Clawback{}
-	mi := &file_proto_token_transfer_service_proto_msgTypes[6]
+	mi := &file_token_transfer_service_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -548,7 +561,7 @@ func (x *Clawback) String() string {
 func (*Clawback) ProtoMessage() {}
 
 func (x *Clawback) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_token_transfer_service_proto_msgTypes[6]
+	mi := &file_token_transfer_service_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -561,7 +574,7 @@ func (x *Clawback) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Clawback.ProtoReflect.Descriptor instead.
 func (*Clawback) Descriptor() ([]byte, []int) {
-	return file_proto_token_transfer_service_proto_rawDescGZIP(), []int{6}
+	return file_token_transfer_service_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Clawback) GetFrom() string {
@@ -604,7 +617,7 @@ type Fee struct {
 
 func (x *Fee) Reset() {
 	*x = Fee{}
-	mi := &file_proto_token_transfer_service_proto_msgTypes[7]
+	mi := &file_token_transfer_service_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -616,7 +629,7 @@ func (x *Fee) String() string {
 func (*Fee) ProtoMessage() {}
 
 func (x *Fee) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_token_transfer_service_proto_msgTypes[7]
+	mi := &file_token_transfer_service_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -629,7 +642,7 @@ func (x *Fee) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Fee.ProtoReflect.Descriptor instead.
 func (*Fee) Descriptor() ([]byte, []int) {
-	return file_proto_token_transfer_service_proto_rawDescGZIP(), []int{7}
+	return file_token_transfer_service_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Fee) GetFrom() string {
@@ -660,11 +673,11 @@ func (x *Fee) GetAmount() string {
 	return ""
 }
 
-var File_proto_token_transfer_service_proto protoreflect.FileDescriptor
+var File_token_transfer_service_proto protoreflect.FileDescriptor
 
-const file_proto_token_transfer_service_proto_rawDesc = "" +
+const file_token_transfer_service_proto_rawDesc = "" +
 	"\n" +
-	"\"proto/token_transfer_service.proto\x12\bnebu.ttp\"T\n" +
+	"\x1ctoken_transfer_service.proto\x12\bnebu.ttp\"T\n" +
 	"\x10GetEventsRequest\x12!\n" +
 	"\fstart_ledger\x18\x01 \x01(\rR\vstartLedger\x12\x1d\n" +
 	"\n" +
@@ -676,10 +689,11 @@ const file_proto_token_transfer_service_proto_rawDesc = "" +
 	"\x04burn\x18\x04 \x01(\v2\x0e.nebu.ttp.BurnH\x00R\x04burn\x120\n" +
 	"\bclawback\x18\x05 \x01(\v2\x12.nebu.ttp.ClawbackH\x00R\bclawback\x12!\n" +
 	"\x03fee\x18\x06 \x01(\v2\r.nebu.ttp.FeeH\x00R\x03feeB\a\n" +
-	"\x05event\"\x9e\x02\n" +
+	"\x05event\"\xbb\x02\n" +
 	"\tEventMeta\x12'\n" +
 	"\x0fledger_sequence\x18\x01 \x01(\rR\x0eledgerSequence\x12$\n" +
-	"\x0eclosed_at_unix\x18\x02 \x01(\x03R\fclosedAtUnix\x12\x17\n" +
+	"\x0eclosed_at_unix\x18\x02 \x01(\x03R\fclosedAtUnix\x12\x1b\n" +
+	"\tclosed_at\x18\b \x01(\tR\bclosedAt\x12\x17\n" +
 	"\atx_hash\x18\x03 \x01(\tR\x06txHash\x12+\n" +
 	"\x11transaction_index\x18\x04 \x01(\rR\x10transactionIndex\x12'\n" +
 	"\x0foperation_index\x18\x05 \x01(\rR\x0eoperationIndex\x12)\n" +
@@ -720,19 +734,19 @@ const file_proto_token_transfer_service_proto_rawDesc = "" +
 	"\tGetEvents\x12\x1a.nebu.ttp.GetEventsRequest\x1a\x1c.nebu.ttp.TokenTransferEvent0\x01BTZRgithub.com/withObsrvr/nebu-processor-registry/processors/token-transfer/proto;ttpbb\x06proto3"
 
 var (
-	file_proto_token_transfer_service_proto_rawDescOnce sync.Once
-	file_proto_token_transfer_service_proto_rawDescData []byte
+	file_token_transfer_service_proto_rawDescOnce sync.Once
+	file_token_transfer_service_proto_rawDescData []byte
 )
 
-func file_proto_token_transfer_service_proto_rawDescGZIP() []byte {
-	file_proto_token_transfer_service_proto_rawDescOnce.Do(func() {
-		file_proto_token_transfer_service_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_token_transfer_service_proto_rawDesc), len(file_proto_token_transfer_service_proto_rawDesc)))
+func file_token_transfer_service_proto_rawDescGZIP() []byte {
+	file_token_transfer_service_proto_rawDescOnce.Do(func() {
+		file_token_transfer_service_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_token_transfer_service_proto_rawDesc), len(file_token_transfer_service_proto_rawDesc)))
 	})
-	return file_proto_token_transfer_service_proto_rawDescData
+	return file_token_transfer_service_proto_rawDescData
 }
 
-var file_proto_token_transfer_service_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
-var file_proto_token_transfer_service_proto_goTypes = []any{
+var file_token_transfer_service_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_token_transfer_service_proto_goTypes = []any{
 	(*GetEventsRequest)(nil),   // 0: nebu.ttp.GetEventsRequest
 	(*TokenTransferEvent)(nil), // 1: nebu.ttp.TokenTransferEvent
 	(*EventMeta)(nil),          // 2: nebu.ttp.EventMeta
@@ -742,7 +756,7 @@ var file_proto_token_transfer_service_proto_goTypes = []any{
 	(*Clawback)(nil),           // 6: nebu.ttp.Clawback
 	(*Fee)(nil),                // 7: nebu.ttp.Fee
 }
-var file_proto_token_transfer_service_proto_depIdxs = []int32{
+var file_token_transfer_service_proto_depIdxs = []int32{
 	2, // 0: nebu.ttp.TokenTransferEvent.meta:type_name -> nebu.ttp.EventMeta
 	3, // 1: nebu.ttp.TokenTransferEvent.transfer:type_name -> nebu.ttp.Transfer
 	4, // 2: nebu.ttp.TokenTransferEvent.mint:type_name -> nebu.ttp.Mint
@@ -758,12 +772,12 @@ var file_proto_token_transfer_service_proto_depIdxs = []int32{
 	0, // [0:6] is the sub-list for field type_name
 }
 
-func init() { file_proto_token_transfer_service_proto_init() }
-func file_proto_token_transfer_service_proto_init() {
-	if File_proto_token_transfer_service_proto != nil {
+func init() { file_token_transfer_service_proto_init() }
+func file_token_transfer_service_proto_init() {
+	if File_token_transfer_service_proto != nil {
 		return
 	}
-	file_proto_token_transfer_service_proto_msgTypes[1].OneofWrappers = []any{
+	file_token_transfer_service_proto_msgTypes[1].OneofWrappers = []any{
 		(*TokenTransferEvent_Transfer)(nil),
 		(*TokenTransferEvent_Mint)(nil),
 		(*TokenTransferEvent_Burn)(nil),
@@ -774,17 +788,17 @@ func file_proto_token_transfer_service_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_token_transfer_service_proto_rawDesc), len(file_proto_token_transfer_service_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_token_transfer_service_proto_rawDesc), len(file_token_transfer_service_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_token_transfer_service_proto_goTypes,
-		DependencyIndexes: file_proto_token_transfer_service_proto_depIdxs,
-		MessageInfos:      file_proto_token_transfer_service_proto_msgTypes,
+		GoTypes:           file_token_transfer_service_proto_goTypes,
+		DependencyIndexes: file_token_transfer_service_proto_depIdxs,
+		MessageInfos:      file_token_transfer_service_proto_msgTypes,
 	}.Build()
-	File_proto_token_transfer_service_proto = out.File
-	file_proto_token_transfer_service_proto_goTypes = nil
-	file_proto_token_transfer_service_proto_depIdxs = nil
+	File_token_transfer_service_proto = out.File
+	file_token_transfer_service_proto_goTypes = nil
+	file_token_transfer_service_proto_depIdxs = nil
 }

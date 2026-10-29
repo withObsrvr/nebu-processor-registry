@@ -87,8 +87,11 @@ func convertEvent(sdkEvent *token_transfer.TokenTransferEvent, inSuccessfulTx bo
 
 	// Convert metadata
 	meta := &ttpb.EventMeta{
-		LedgerSequence:   sdkEvent.Meta.LedgerSequence,
-		ClosedAtUnix:     sdkEvent.Meta.ClosedAt.AsTime().Unix(),
+		LedgerSequence: sdkEvent.Meta.LedgerSequence,
+		ClosedAtUnix:   sdkEvent.Meta.ClosedAt.AsTime().Unix(),
+		// The SDK hands us a protobuf Timestamp, which already carries
+		// sub-second precision, so this does not need the ledger.
+		ClosedAt:         sdkEvent.Meta.ClosedAt.AsTime().UTC().Format("2006-01-02T15:04:05.000Z07:00"),
 		TxHash:           sdkEvent.Meta.TxHash,
 		TransactionIndex: sdkEvent.Meta.TransactionIndex,
 		OperationIndex:   opIndex,

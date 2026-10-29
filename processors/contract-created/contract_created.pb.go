@@ -22,13 +22,19 @@ const (
 )
 
 type EventMeta struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	LedgerSequence   uint32                 `protobuf:"varint,1,opt,name=ledger_sequence,json=ledgerSequence,proto3" json:"ledger_sequence,omitempty"`
-	ClosedAtUnix     int64                  `protobuf:"varint,2,opt,name=closed_at_unix,json=closedAtUnix,proto3" json:"closed_at_unix,omitempty"`
-	TxHash           string                 `protobuf:"bytes,3,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
-	TransactionIndex uint32                 `protobuf:"varint,4,opt,name=transaction_index,json=transactionIndex,proto3" json:"transaction_index,omitempty"`
-	OperationIndex   int32                  `protobuf:"varint,5,opt,name=operation_index,json=operationIndex,proto3" json:"operation_index,omitempty"`
-	InSuccessfulTx   bool                   `protobuf:"varint,6,opt,name=in_successful_tx,json=inSuccessfulTx,proto3" json:"in_successful_tx,omitempty"`
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	LedgerSequence uint32                 `protobuf:"varint,1,opt,name=ledger_sequence,json=ledgerSequence,proto3" json:"ledger_sequence,omitempty"`
+	ClosedAtUnix   int64                  `protobuf:"varint,2,opt,name=closed_at_unix,json=closedAtUnix,proto3" json:"closed_at_unix,omitempty"`
+	// RFC 3339 UTC close time with millisecond precision, e.g.
+	// "2026-10-28T06:52:40.000Z". Prefer this over closed_at_unix:
+	// from Protocol 30 (CAP-88) consecutive ledgers can close within
+	// the same whole second, so a seconds value cannot order or
+	// bucket them. See docs/adr/0001-millisecond-close-time.md.
+	ClosedAt         string `protobuf:"bytes,7,opt,name=closed_at,json=closedAt,proto3" json:"closed_at,omitempty"`
+	TxHash           string `protobuf:"bytes,3,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	TransactionIndex uint32 `protobuf:"varint,4,opt,name=transaction_index,json=transactionIndex,proto3" json:"transaction_index,omitempty"`
+	OperationIndex   int32  `protobuf:"varint,5,opt,name=operation_index,json=operationIndex,proto3" json:"operation_index,omitempty"`
+	InSuccessfulTx   bool   `protobuf:"varint,6,opt,name=in_successful_tx,json=inSuccessfulTx,proto3" json:"in_successful_tx,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -75,6 +81,13 @@ func (x *EventMeta) GetClosedAtUnix() int64 {
 		return x.ClosedAtUnix
 	}
 	return 0
+}
+
+func (x *EventMeta) GetClosedAt() string {
+	if x != nil {
+		return x.ClosedAt
+	}
+	return ""
 }
 
 func (x *EventMeta) GetTxHash() string {
@@ -476,10 +489,11 @@ var File_contract_created_proto protoreflect.FileDescriptor
 
 const file_contract_created_proto_rawDesc = "" +
 	"\n" +
-	"\x16contract_created.proto\x12\x10contract_created\"\xf3\x01\n" +
+	"\x16contract_created.proto\x12\x10contract_created\"\x90\x02\n" +
 	"\tEventMeta\x12'\n" +
 	"\x0fledger_sequence\x18\x01 \x01(\rR\x0eledgerSequence\x12$\n" +
-	"\x0eclosed_at_unix\x18\x02 \x01(\x03R\fclosedAtUnix\x12\x17\n" +
+	"\x0eclosed_at_unix\x18\x02 \x01(\x03R\fclosedAtUnix\x12\x1b\n" +
+	"\tclosed_at\x18\a \x01(\tR\bclosedAt\x12\x17\n" +
 	"\atx_hash\x18\x03 \x01(\tR\x06txHash\x12+\n" +
 	"\x11transaction_index\x18\x04 \x01(\rR\x10transactionIndex\x12'\n" +
 	"\x0foperation_index\x18\x05 \x01(\x05R\x0eoperationIndex\x12(\n" +

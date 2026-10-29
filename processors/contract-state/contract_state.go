@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/strkey"
@@ -53,7 +54,7 @@ func (o *Origin) Close() {
 // (streams-never-throw).
 func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	sequence := ledger.LedgerSequence()
-	closeTime := int64(ledger.LedgerHeaderHistoryEntry().Header.ScpValue.CloseTime)
+	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
 
 	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
 	if err != nil {
@@ -90,7 +91,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 				continue
 			}
 
-			event := o.processContractDataChange(change, sequence, closeTime, txHash, txIndex)
+			event := o.processContractDataChange(change, sequence, closeTimeMs, txHash, txIndex)
 			if event != nil {
 				// Dedup key: contractId + ledgerKeyHash
 				dedupKey := event.ContractId + "|" + event.LedgerKeyHash
@@ -112,7 +113,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 func (o *Origin) processContractDataChange(
 	change ingest.Change,
 	sequence uint32,
-	closeTime int64,
+	closeTimeMs int64,
 	txHash string,
 	txIndex uint32,
 ) *ContractStateEvent {
@@ -186,17 +187,18 @@ func (o *Origin) processContractDataChange(
 	}
 
 	return &ContractStateEvent{
-		ContractId:   contractID,
+		ContractId:    contractID,
 		LedgerKeyHash: keyHash,
-		Durability:   durability,
-		Operation:    operation,
-		KeyXdr:       keyB64,
-		ValXdr:       valB64,
-		KeySymbol:    keySymbol,
+		Durability:    durability,
+		Operation:     operation,
+		KeyXdr:        keyB64,
+		ValXdr:        valB64,
+		KeySymbol:     keySymbol,
 		Meta: &EventMeta{
-			LedgerSequence: sequence,
-			ClosedAtUnix:   closeTime,
-			TxHash:         txHash,
+			LedgerSequence:   sequence,
+			ClosedAtUnix:     closeTimeMs / 1000,
+			ClosedAt:         closedAtRFC3339(closeTimeMs),
+			TxHash:           txHash,
 			TransactionIndex: txIndex,
 		},
 	}
@@ -208,4 +210,14 @@ func extractKeySymbol(key xdr.ScVal) string {
 		return string(key.MustSym())
 	}
 	return ""
+}
+
+// closedAtRFC3339 renders a millisecond Unix timestamp as the RFC 3339 UTC
+// string the envelope's closed_at field carries (DATA-3).
+//
+// Fixed-width with three decimal places rather than time.RFC3339Nano, which
+// drops trailing zeros: uniform width keeps values lexicographically
+// sortable and lets a human line them up.
+func closedAtRFC3339(ms int64) string {
+	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }

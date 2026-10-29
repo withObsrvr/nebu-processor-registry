@@ -30,12 +30,18 @@ const (
 // pools, contract data and code, config settings, and TTL entries — and
 // includes fee, refund, and protocol-upgrade changes alongside operation ones.
 type LedgerChangeStats struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	LedgerSequence       uint32                 `protobuf:"varint,1,opt,name=ledger_sequence,json=ledgerSequence,proto3" json:"ledger_sequence,omitempty"`
-	ClosedAtUnix         int64                  `protobuf:"varint,2,opt,name=closed_at_unix,json=closedAtUnix,proto3" json:"closed_at_unix,omitempty"`
-	LedgerEntriesCreated uint32                 `protobuf:"varint,3,opt,name=ledger_entries_created,json=ledgerEntriesCreated,proto3" json:"ledger_entries_created,omitempty"`
-	LedgerEntriesUpdated uint32                 `protobuf:"varint,4,opt,name=ledger_entries_updated,json=ledgerEntriesUpdated,proto3" json:"ledger_entries_updated,omitempty"`
-	LedgerEntriesDeleted uint32                 `protobuf:"varint,5,opt,name=ledger_entries_deleted,json=ledgerEntriesDeleted,proto3" json:"ledger_entries_deleted,omitempty"`
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	LedgerSequence uint32                 `protobuf:"varint,1,opt,name=ledger_sequence,json=ledgerSequence,proto3" json:"ledger_sequence,omitempty"`
+	ClosedAtUnix   int64                  `protobuf:"varint,2,opt,name=closed_at_unix,json=closedAtUnix,proto3" json:"closed_at_unix,omitempty"`
+	// RFC 3339 UTC close time with millisecond precision, e.g.
+	// "2026-10-28T06:52:40.000Z". Prefer this over closed_at_unix:
+	// from Protocol 30 (CAP-88) consecutive ledgers can close within
+	// the same whole second, so a seconds value cannot order or
+	// bucket them. See docs/adr/0001-millisecond-close-time.md.
+	ClosedAt             string `protobuf:"bytes,33,opt,name=closed_at,json=closedAt,proto3" json:"closed_at,omitempty"`
+	LedgerEntriesCreated uint32 `protobuf:"varint,3,opt,name=ledger_entries_created,json=ledgerEntriesCreated,proto3" json:"ledger_entries_created,omitempty"`
+	LedgerEntriesUpdated uint32 `protobuf:"varint,4,opt,name=ledger_entries_updated,json=ledgerEntriesUpdated,proto3" json:"ledger_entries_updated,omitempty"`
+	LedgerEntriesDeleted uint32 `protobuf:"varint,5,opt,name=ledger_entries_deleted,json=ledgerEntriesDeleted,proto3" json:"ledger_entries_deleted,omitempty"`
 	// Entries brought back from the archive by paying to restore them.
 	//
 	// This is read from LedgerEntryChangeType directly. Deriving the change type
@@ -127,6 +133,13 @@ func (x *LedgerChangeStats) GetClosedAtUnix() int64 {
 		return x.ClosedAtUnix
 	}
 	return 0
+}
+
+func (x *LedgerChangeStats) GetClosedAt() string {
+	if x != nil {
+		return x.ClosedAt
+	}
+	return ""
 }
 
 func (x *LedgerChangeStats) GetLedgerEntriesCreated() uint32 {
@@ -394,10 +407,11 @@ var File_ledger_change_stats_proto protoreflect.FileDescriptor
 
 const file_ledger_change_stats_proto_rawDesc = "" +
 	"\n" +
-	"\x19ledger_change_stats.proto\x12\x13ledger_change_stats\"\xc4\a\n" +
+	"\x19ledger_change_stats.proto\x12\x13ledger_change_stats\"\xe1\a\n" +
 	"\x11LedgerChangeStats\x12'\n" +
 	"\x0fledger_sequence\x18\x01 \x01(\rR\x0eledgerSequence\x12$\n" +
-	"\x0eclosed_at_unix\x18\x02 \x01(\x03R\fclosedAtUnix\x124\n" +
+	"\x0eclosed_at_unix\x18\x02 \x01(\x03R\fclosedAtUnix\x12\x1b\n" +
+	"\tclosed_at\x18! \x01(\tR\bclosedAt\x124\n" +
 	"\x16ledger_entries_created\x18\x03 \x01(\rR\x14ledgerEntriesCreated\x124\n" +
 	"\x16ledger_entries_updated\x18\x04 \x01(\rR\x14ledgerEntriesUpdated\x124\n" +
 	"\x16ledger_entries_deleted\x18\x05 \x01(\rR\x14ledgerEntriesDeleted\x126\n" +

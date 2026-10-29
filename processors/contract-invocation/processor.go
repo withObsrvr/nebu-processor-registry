@@ -53,7 +53,7 @@ func (o *Origin) Close() {
 // (streams-never-throw).
 func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	sequence := ledger.LedgerSequence()
-	closeTime := time.Unix(int64(ledger.LedgerHeaderHistoryEntry().Header.ScpValue.CloseTime), 0)
+	closeTime := time.UnixMilli(processor.LedgerCloseTimeMs(ledger)).UTC()
 
 	// Build transaction success map
 	txSuccessMap := make(map[string]bool)
@@ -171,6 +171,7 @@ func (o *Origin) processContractInvocation(
 		Meta: &cipb.EventMeta{
 			LedgerSequence:   sequence,
 			ClosedAtUnix:     closeTime.Unix(),
+			ClosedAt:         closeTime.Format("2006-01-02T15:04:05.000Z07:00"),
 			TxHash:           txHash,
 			TransactionIndex: uint32(tx.Index),
 			OperationIndex:   uint32(opIndex),

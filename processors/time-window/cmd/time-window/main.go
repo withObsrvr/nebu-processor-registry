@@ -19,6 +19,7 @@
 package main
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -57,12 +58,12 @@ func filterByTimeWindow(event map[string]interface{}) map[string]interface{} {
 		return nil
 	}
 
-	closedAtUnix, ok := meta["closedAtUnix"].(float64)
+	eventTimeMs, ok := eventCloseTimeMs(meta)
 	if !ok {
 		return nil
 	}
 
-	eventTime := int64(closedAtUnix)
+	eventTime := eventTimeMs / 1000
 
 	// Check --last duration
 	if lastDuration != "" {
@@ -89,4 +90,36 @@ func filterByTimeWindow(event map[string]interface{}) map[string]interface{} {
 
 	// Passed time window filters
 	return event
+}
+
+// eventCloseTimeMs returns the event's ledger close time in milliseconds
+// since the Unix epoch.
+//
+// It prefers meta.closedAt, the RFC 3339 field carrying millisecond
+// precision. From Protocol 30 (CAP-88) consecutive ledgers can close within
+// the same whole second, so a seconds-resolution value cannot place them in
+// the right window — it does not error, it just buckets them wrongly.
+//
+// It falls back to meta.closedAtUnix for events from processors that have
+// not been rebuilt yet, accepting both a JSON string and a JSON number.
+// That is not defensive coding: protojson renders int64 as a *string*, so
+// the previous implementation's float64 type assertion never matched a
+// proto-origin event and this filter silently discarded all of them.
+func eventCloseTimeMs(meta map[string]interface{}) (int64, bool) {
+	if raw, ok := meta["closedAt"].(string); ok && raw != "" {
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			return t.UnixMilli(), true
+		}
+	}
+	for _, key := range []string{"closedAtUnix", "closed_at_unix"} {
+		switch v := meta[key].(type) {
+		case float64:
+			return int64(v) * 1000, true
+		case string:
+			if secs, err := strconv.ParseInt(v, 10, 64); err == nil {
+				return secs * 1000, true
+			}
+		}
+	}
+	return 0, false
 }
