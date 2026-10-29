@@ -3,6 +3,7 @@ package contract_events
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"time"
@@ -42,7 +43,7 @@ func (p *ContractEventsOriginProto) ProcessLedger(ctx context.Context, ledger xd
 	}
 	defer txReader.Close()
 
-	closeTime := int64(ledger.LedgerHeaderHistoryEntry().Header.ScpValue.CloseTime)
+	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
 
 	// Process each transaction
 	txIndex := uint32(0)
@@ -86,7 +87,7 @@ func (p *ContractEventsOriginProto) ProcessLedger(ctx context.Context, ledger xd
 				contractEvent, err := p.buildContractEvent(
 					event,
 					ledgerSeq,
-					closeTime,
+					closeTimeMs,
 					txHash,
 					txIndex,
 					int32(opIndex),
@@ -114,7 +115,7 @@ func (p *ContractEventsOriginProto) ProcessLedger(ctx context.Context, ledger xd
 				contractEvent, err := p.buildContractEvent(
 					txEvent.Event,
 					ledgerSeq,
-					closeTime,
+					closeTimeMs,
 					txHash,
 					txIndex,
 					-1, // Transaction-level events have no operation index
@@ -143,7 +144,7 @@ func (p *ContractEventsOriginProto) ProcessLedger(ctx context.Context, ledger xd
 func (p *ContractEventsOriginProto) buildContractEvent(
 	event xdr.ContractEvent,
 	ledgerSeq uint32,
-	closeTime int64,
+	closeTimeMs int64,
 	txHash string,
 	txIndex uint32,
 	opIndex int32,
@@ -157,16 +158,20 @@ func (p *ContractEventsOriginProto) buildContractEvent(
 		return nil, fmt.Errorf("error encoding contract ID: %w", err)
 	}
 
-	// Decode topics
+	// Decode topics, keeping the source XDR beside each decoded value so a
+	// consumer can re-run and check the decode (DATA-9).
 	var topicDecoded []*ScVal
+	var topicXdr []string
 	for _, topic := range event.Body.V0.Topics {
 		decoded := convertXdrScValToProto(topic)
 		topicDecoded = append(topicDecoded, decoded)
+		topicXdr = append(topicXdr, scValBase64(topic))
 	}
 
 	// Decode event data
 	var dataDecoded *ScVal
 	eventData := event.Body.V0.Data
+	dataXdr := scValBase64(eventData)
 	if eventData.Type != xdr.ScValTypeScvVoid {
 		dataDecoded = convertXdrScValToProto(eventData)
 	} else {
@@ -191,7 +196,10 @@ func (p *ContractEventsOriginProto) buildContractEvent(
 
 	// Build contract event protobuf
 	contractEvent := &ContractEvent{
-		Timestamp:         closeTime,
+		Timestamp:         closeTimeMs / 1000,
+		ClosedAt:          closedAtRFC3339(closeTimeMs),
+		TopicXdr:          topicXdr,
+		DataXdr:           dataXdr,
 		LedgerSequence:    ledgerSeq,
 		TransactionHash:   txHash,
 		TransactionIndex:  txIndex,
@@ -418,4 +426,27 @@ func (p *ContractEventsOriginProto) Name() string {
 // Type returns the processor type
 func (p *ContractEventsOriginProto) Type() processor.Type {
 	return processor.TypeOrigin
+}
+
+// scValBase64 renders an ScVal as its base64-encoded source XDR, for the
+// topic_xdr and data_xdr fields.
+//
+// DATA-9 requires the source XDR to sit beside the decoded columns so any
+// decode can be re-run and checked. An ScVal that will not marshal returns
+// "" rather than failing the event: losing the ability to verify one decode
+// is bad, but dropping a real chain event over it is worse (N-4, streams
+// never throw).
+func scValBase64(val xdr.ScVal) string {
+	raw, err := val.MarshalBinary()
+	if err != nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+// closedAtRFC3339 renders a millisecond Unix timestamp as the RFC 3339 UTC
+// string the closed_at field carries (DATA-3), fixed to three decimal places
+// so values are uniform width and sort lexicographically.
+func closedAtRFC3339(ms int64) string {
+	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }
