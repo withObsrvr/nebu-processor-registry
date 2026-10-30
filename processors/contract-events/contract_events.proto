@@ -12,7 +12,12 @@ option go_package = "github.com/withObsrvr/nebu-processor-registry/processors/co
 
 // ContractEvent represents a single contract event emitted on-chain.
 message ContractEvent {
-  // Ledger close timestamp (Unix seconds)
+  // Ledger close timestamp (Unix seconds).
+  //
+  // Deprecated: superseded by closed_at. From Protocol 30 (CAP-88)
+  // consecutive ledgers can close within the same whole second, so a
+  // seconds value cannot order or bucket them. Kept per VER-6 until at
+  // least 2027-01-27. See docs/adr/0001-millisecond-close-time.md.
   int64 timestamp = 1;
 
   // Ledger sequence number
@@ -35,6 +40,22 @@ message ContractEvent {
 
   // Decoded event data
   ScVal data_decoded = 8;
+
+  // RFC 3339 UTC close time with millisecond precision, e.g.
+  // "2026-10-28T06:52:40.000Z". Prefer this over timestamp.
+  string closed_at = 15;
+
+  // Source XDR of each topic, base64-encoded, positionally matching
+  // topic_decoded.
+  //
+  // DATA-9 of the OBSRVR Engineering Standard: keep the source XDR next to
+  // the decoded columns "so any decode can be re-run and checked". Without
+  // it a consumer has to trust this processor's decode with no way to verify
+  // it, and a decoding bug is indistinguishable from correct output.
+  repeated string topic_xdr = 16;
+
+  // Source XDR of the event data, base64-encoded, matching data_decoded.
+  string data_xdr = 17;
 
   // Whether this event was in a successful transaction
   bool in_successful_tx = 9;

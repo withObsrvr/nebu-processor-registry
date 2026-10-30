@@ -22,6 +22,21 @@ schema:
   version: v1
   identifier: nebu.token_transfer.v1
   documentation: https://github.com/withObsrvr/nebu-processor-registry/tree/main/processors/token-transfer
+  # STL-1: the CAPs and SEPs this processor implements.
+  specs:
+    - id: CAP-67
+      name: Unified Asset Events
+      status: final
+      protocol: 23
+      url: https://github.com/stellar/stellar-protocol/blob/master/core/cap-0067.md
+    - id: SEP-41
+      name: Soroban Token Interface
+      status: draft
+      # STL-1 requires a Draft's revision to be pinned. Needs the revision
+      # this processor was actually written against; not inferable from here.
+      # See docs/stl-1-spec-mapping.md.
+      revision: unconfirmed
+      url: https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0041.md
 
 docs:
   quick_start: |

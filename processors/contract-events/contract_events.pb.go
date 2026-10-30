@@ -83,7 +83,12 @@ func (ContractEventType) EnumDescriptor() ([]byte, []int) {
 // ContractEvent represents a single contract event emitted on-chain.
 type ContractEvent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Ledger close timestamp (Unix seconds)
+	// Ledger close timestamp (Unix seconds).
+	//
+	// Deprecated: superseded by closed_at. From Protocol 30 (CAP-88)
+	// consecutive ledgers can close within the same whole second, so a
+	// seconds value cannot order or bucket them. Kept per VER-6 until at
+	// least 2027-01-27. See docs/adr/0001-millisecond-close-time.md.
 	Timestamp int64 `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	// Ledger sequence number
 	LedgerSequence uint32 `protobuf:"varint,2,opt,name=ledger_sequence,json=ledgerSequence,proto3" json:"ledger_sequence,omitempty"`
@@ -99,6 +104,19 @@ type ContractEvent struct {
 	TopicDecoded []*ScVal `protobuf:"bytes,7,rep,name=topic_decoded,json=topicDecoded,proto3" json:"topic_decoded,omitempty"`
 	// Decoded event data
 	DataDecoded *ScVal `protobuf:"bytes,8,opt,name=data_decoded,json=dataDecoded,proto3" json:"data_decoded,omitempty"`
+	// RFC 3339 UTC close time with millisecond precision, e.g.
+	// "2026-10-28T06:52:40.000Z". Prefer this over timestamp.
+	ClosedAt string `protobuf:"bytes,15,opt,name=closed_at,json=closedAt,proto3" json:"closed_at,omitempty"`
+	// Source XDR of each topic, base64-encoded, positionally matching
+	// topic_decoded.
+	//
+	// DATA-9 of the OBSRVR Engineering Standard: keep the source XDR next to
+	// the decoded columns "so any decode can be re-run and checked". Without
+	// it a consumer has to trust this processor's decode with no way to verify
+	// it, and a decoding bug is indistinguishable from correct output.
+	TopicXdr []string `protobuf:"bytes,16,rep,name=topic_xdr,json=topicXdr,proto3" json:"topic_xdr,omitempty"`
+	// Source XDR of the event data, base64-encoded, matching data_decoded.
+	DataXdr string `protobuf:"bytes,17,opt,name=data_xdr,json=dataXdr,proto3" json:"data_xdr,omitempty"`
 	// Whether this event was in a successful transaction
 	InSuccessfulTx bool `protobuf:"varint,9,opt,name=in_successful_tx,json=inSuccessfulTx,proto3" json:"in_successful_tx,omitempty"`
 	// Event index within the transaction
@@ -199,6 +217,27 @@ func (x *ContractEvent) GetDataDecoded() *ScVal {
 		return x.DataDecoded
 	}
 	return nil
+}
+
+func (x *ContractEvent) GetClosedAt() string {
+	if x != nil {
+		return x.ClosedAt
+	}
+	return ""
+}
+
+func (x *ContractEvent) GetTopicXdr() []string {
+	if x != nil {
+		return x.TopicXdr
+	}
+	return nil
+}
+
+func (x *ContractEvent) GetDataXdr() string {
+	if x != nil {
+		return x.DataXdr
+	}
+	return ""
 }
 
 func (x *ContractEvent) GetInSuccessfulTx() bool {
@@ -984,7 +1023,7 @@ var File_contract_events_proto protoreflect.FileDescriptor
 
 const file_contract_events_proto_rawDesc = "" +
 	"\n" +
-	"\x15contract_events.proto\x12\x0fcontract_events\"\x90\x05\n" +
+	"\x15contract_events.proto\x12\x0fcontract_events\"\xe5\x05\n" +
 	"\rContractEvent\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\x12'\n" +
 	"\x0fledger_sequence\x18\x02 \x01(\rR\x0eledgerSequence\x12)\n" +
@@ -995,7 +1034,10 @@ const file_contract_events_proto_rawDesc = "" +
 	"\n" +
 	"event_type\x18\x06 \x01(\tR\teventType\x12;\n" +
 	"\rtopic_decoded\x18\a \x03(\v2\x16.contract_events.ScValR\ftopicDecoded\x129\n" +
-	"\fdata_decoded\x18\b \x01(\v2\x16.contract_events.ScValR\vdataDecoded\x12(\n" +
+	"\fdata_decoded\x18\b \x01(\v2\x16.contract_events.ScValR\vdataDecoded\x12\x1b\n" +
+	"\tclosed_at\x18\x0f \x01(\tR\bclosedAt\x12\x1b\n" +
+	"\ttopic_xdr\x18\x10 \x03(\tR\btopicXdr\x12\x19\n" +
+	"\bdata_xdr\x18\x11 \x01(\tR\adataXdr\x12(\n" +
 	"\x10in_successful_tx\x18\t \x01(\bR\x0einSuccessfulTx\x12\x1f\n" +
 	"\vevent_index\x18\n" +
 	" \x01(\x05R\n" +
