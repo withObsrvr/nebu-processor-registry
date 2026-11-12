@@ -7,7 +7,7 @@ toolchain go1.26.10
 require (
 	github.com/stellar/go-stellar-sdk v0.8.0
 	github.com/stretchr/testify v1.11.1
-	github.com/withObsrvr/nebu v0.6.17
+	github.com/withObsrvr/nebu v0.7.2
 	google.golang.org/grpc v1.83.1
 	google.golang.org/protobuf v1.36.11
 )
@@ -67,7 +67,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.21.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/klauspost/compress v1.18.5 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
