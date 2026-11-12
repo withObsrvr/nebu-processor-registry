@@ -3,7 +3,6 @@ package nft_events
 import (
 	"context"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/withObsrvr/nebu/pkg/processor"
+	"github.com/withObsrvr/nebu/pkg/processor/ledgerread"
 )
 
 // contractIDFromScAddress returns the C-address of the contract an ScAddress
@@ -129,23 +129,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 	ledgerSeq := ledger.LedgerSequence()
 	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
 
-	txReader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
-	if err != nil {
-		processor.ReportWarning(ctx, o.Name(), fmt.Errorf("ledger %d: create tx reader: %w", ledgerSeq, err))
-		return
-	}
-	defer txReader.Close()
-
-	for {
-		tx, err := txReader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			processor.ReportWarning(ctx, o.Name(), fmt.Errorf("ledger %d: read tx: %w", ledgerSeq, err))
-			return
-		}
-
+	for tx := range ledgerread.Transactions(ctx, o.Name(), o.passphrase, ledger) {
 		txHash := tx.Result.TransactionHash.HexString()
 		successful := tx.Result.Successful()
 		txIndex := uint32(tx.Index)

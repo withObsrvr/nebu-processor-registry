@@ -4,12 +4,12 @@ package ttl_tracker
 import (
 	"context"
 	"fmt"
-	"io"
 	"time"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/withObsrvr/nebu/pkg/processor"
+	"github.com/withObsrvr/nebu/pkg/processor/ledgerread"
 )
 
 // Origin is an origin processor that extracts TTL (time-to-live) changes.
@@ -53,27 +53,22 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 	sequence := ledger.LedgerSequence()
 	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
 
-	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
-	if err != nil {
-		processor.ReportWarning(ctx, o.Name(),
-			fmt.Errorf("ledger %d: create tx reader: %w", sequence, err))
+	// AllTransactions, not Transactions, because of what `seen` does with
+	// the result. Dedup here is last-write-wins, so if the last write for a
+	// key lives in a transaction that could not be read, skipping it does
+	// not drop the key — it emits the *earlier* value as though it were
+	// current. That is a stale fact presented as a fresh one, which is the
+	// same failure as a missing map entry falling through to a default, so
+	// an incomplete read must decline the ledger. Already reported.
+	transactions, ok := ledgerread.AllTransactions(ctx, o.Name(), o.passphrase, ledger)
+	if !ok {
 		return
 	}
-	defer reader.Close()
 
 	// Track seen entries for dedup within this ledger (last write wins)
 	seen := make(map[string]*TtlEvent)
 
-	for {
-		tx, err := reader.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			processor.ReportWarning(ctx, o.Name(),
-				fmt.Errorf("ledger %d: read tx: %w", sequence, err))
-			return
-		}
+	for _, tx := range transactions {
 
 		txHash := tx.Result.TransactionHash.HexString()
 		txIndex := uint32(tx.Index)

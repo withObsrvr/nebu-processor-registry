@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/withObsrvr/nebu/pkg/processor"
+	"github.com/withObsrvr/nebu/pkg/processor/ledgerread"
 )
 
 // Origin extracts contract creation events from Stellar ledgers.
@@ -47,23 +47,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 	ledgerSeq := ledger.LedgerSequence()
 	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
 
-	txReader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
-	if err != nil {
-		processor.ReportWarning(ctx, o.Name(), fmt.Errorf("ledger %d: create tx reader: %w", ledgerSeq, err))
-		return
-	}
-	defer txReader.Close()
-
-	for {
-		tx, err := txReader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			processor.ReportWarning(ctx, o.Name(), fmt.Errorf("ledger %d: read tx: %w", ledgerSeq, err))
-			return
-		}
-
+	for tx := range ledgerread.Transactions(ctx, o.Name(), o.passphrase, ledger) {
 		if !tx.Result.Successful() {
 			continue
 		}

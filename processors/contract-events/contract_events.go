@@ -5,14 +5,13 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"time"
 
-	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/strkey"
 	contractevents "github.com/stellar/go-stellar-sdk/support/contractevents"
 	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/withObsrvr/nebu/pkg/processor"
+	"github.com/withObsrvr/nebu/pkg/processor/ledgerread"
 )
 
 // ContractEventsOrigin processes ledgers and extracts contract events
@@ -35,29 +34,11 @@ func NewContractEventsOriginProto(networkPassphrase string) *ContractEventsOrigi
 func (p *ContractEventsOriginProto) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	ledgerSeq := ledger.LedgerSequence()
 
-	txReader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(p.networkPassphrase, ledger)
-	if err != nil {
-		processor.ReportWarning(ctx, p.Name(),
-			fmt.Errorf("ledger %d: create tx reader: %w", ledgerSeq, err))
-		return
-	}
-	defer txReader.Close()
-
 	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
 
 	// Process each transaction
 	txIndex := uint32(0)
-	for {
-		tx, err := txReader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			processor.ReportWarning(ctx, p.Name(),
-				fmt.Errorf("ledger %d: read tx: %w", ledgerSeq, err))
-			return
-		}
-
+	for tx := range ledgerread.Transactions(ctx, p.Name(), p.networkPassphrase, ledger) {
 		// Get transaction events using SDK helper (handles V3/V4 compatibility)
 		txEvents, err := tx.GetTransactionEvents()
 		if err != nil {
