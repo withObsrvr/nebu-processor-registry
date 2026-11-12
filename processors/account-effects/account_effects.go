@@ -5,13 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/withObsrvr/nebu/pkg/processor"
+	"github.com/withObsrvr/nebu/pkg/processor/ledgerread"
 )
 
 // Origin extracts account-level effects (non-payment operations) from ledgers.
@@ -40,25 +40,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 	sequence := ledger.LedgerSequence()
 	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
 
-	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
-	if err != nil {
-		processor.ReportWarning(ctx, o.Name(),
-			fmt.Errorf("ledger %d: create tx reader: %w", sequence, err))
-		return
-	}
-	defer reader.Close()
-
-	for {
-		tx, err := reader.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			processor.ReportWarning(ctx, o.Name(),
-				fmt.Errorf("ledger %d: read tx: %w", sequence, err))
-			return
-		}
-
+	for tx := range ledgerread.Transactions(ctx, o.Name(), o.passphrase, ledger) {
 		txHash := tx.Result.TransactionHash.HexString()
 		txIndex := uint32(tx.Index)
 		successful := tx.Result.Successful()
