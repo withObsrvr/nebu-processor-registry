@@ -3,13 +3,12 @@ package contract_invocation
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"time"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/withObsrvr/nebu/pkg/processor"
+	"github.com/withObsrvr/nebu/pkg/processor/ledgerread"
 
 	cipb "github.com/withObsrvr/nebu-processor-registry/processors/contract-invocation/proto"
 )
@@ -55,50 +54,28 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 	sequence := ledger.LedgerSequence()
 	closeTime := time.UnixMilli(processor.LedgerCloseTimeMs(ledger)).UTC()
 
-	// Build transaction success map
-	txSuccessMap := make(map[string]bool)
-	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
-	if err != nil {
-		processor.ReportWarning(ctx, o.Name(),
-			fmt.Errorf("ledger %d: create tx reader: %w", sequence, err))
+	// One read, not two. This used to open the reader, build the success
+	// map, then open a second reader over the same ledger to process the
+	// transactions; AllTransactions returns them, so the second pass is
+	// over a slice.
+	//
+	// AllTransactions rather than Transactions because of what the map is
+	// for: processContractInvocation looks a transaction up by hash, and a
+	// miss resolves to false — reporting a successful invocation as failed.
+	// A skipped transaction is invisible at that lookup, so an incomplete
+	// read must not be used at all. It has already been reported.
+	transactions, ok := ledgerread.AllTransactions(ctx, o.Name(), o.passphrase, ledger)
+	if !ok {
 		return
 	}
-	defer reader.Close()
 
-	for {
-		tx, err := reader.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			processor.ReportWarning(ctx, o.Name(),
-				fmt.Errorf("ledger %d: read tx (success map): %w", sequence, err))
-			return
-		}
+	txSuccessMap := make(map[string]bool, len(transactions))
+	for _, tx := range transactions {
 		txSuccessMap[tx.Result.TransactionHash.HexString()] = tx.Result.Successful()
 	}
 
-	// Re-create reader to process transactions again
-	reader, err = ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
-	if err != nil {
-		processor.ReportWarning(ctx, o.Name(),
-			fmt.Errorf("ledger %d: re-create tx reader: %w", sequence, err))
-		return
-	}
-	defer reader.Close()
-
 	// Process each transaction
-	for {
-		tx, err := reader.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			processor.ReportWarning(ctx, o.Name(),
-				fmt.Errorf("ledger %d: read tx: %w", sequence, err))
-			return
-		}
-
+	for _, tx := range transactions {
 		// Check each operation for contract invocations
 		for opIndex, op := range tx.Envelope.Operations() {
 			if op.Body.Type == xdr.OperationTypeInvokeHostFunction {

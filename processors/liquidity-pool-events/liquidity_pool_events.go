@@ -5,13 +5,13 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/withObsrvr/nebu/pkg/processor"
+	"github.com/withObsrvr/nebu/pkg/processor/ledgerread"
 )
 
 // Origin extracts liquidity pool operations from ledgers.
@@ -40,49 +40,27 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 	sequence := ledger.LedgerSequence()
 	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
 
-	// Build tx success map
-	txSuccessMap := make(map[string]bool)
-	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
-	if err != nil {
-		processor.ReportWarning(ctx, o.Name(),
-			fmt.Errorf("ledger %d: create tx reader: %w", sequence, err))
+	// One read, not two. This used to open the reader to build the success
+	// map and open a second one over the same ledger to process the
+	// operations; AllTransactions returns them, so the second pass is over
+	// a slice.
+	//
+	// AllTransactions rather than Transactions because of what the map is
+	// for: `successful` below is a lookup by hash, and a miss resolves to
+	// false — reporting a successful deposit or withdraw as failed. A
+	// skipped transaction is invisible at that lookup, so an incomplete
+	// read must not be used at all. It has already been reported.
+	transactions, ok := ledgerread.AllTransactions(ctx, o.Name(), o.passphrase, ledger)
+	if !ok {
 		return
 	}
-	defer reader.Close()
 
-	for {
-		tx, err := reader.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			processor.ReportWarning(ctx, o.Name(),
-				fmt.Errorf("ledger %d: read tx (success map): %w", sequence, err))
-			return
-		}
+	txSuccessMap := make(map[string]bool, len(transactions))
+	for _, tx := range transactions {
 		txSuccessMap[tx.Result.TransactionHash.HexString()] = tx.Result.Successful()
 	}
 
-	// Re-create reader to process operations
-	reader, err = ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
-	if err != nil {
-		processor.ReportWarning(ctx, o.Name(),
-			fmt.Errorf("ledger %d: re-create tx reader: %w", sequence, err))
-		return
-	}
-	defer reader.Close()
-
-	for {
-		tx, err := reader.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			processor.ReportWarning(ctx, o.Name(),
-				fmt.Errorf("ledger %d: read tx: %w", sequence, err))
-			return
-		}
-
+	for _, tx := range transactions {
 		txHash := tx.Result.TransactionHash.HexString()
 		txIndex := uint32(tx.Index)
 		successful := txSuccessMap[txHash]
