@@ -4,13 +4,12 @@ package token_transfer
 import (
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/stellar/go-stellar-sdk/asset"
-	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/processors/token_transfer"
 	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/withObsrvr/nebu/pkg/processor"
+	"github.com/withObsrvr/nebu/pkg/processor/ledgerread"
 
 	ttpb "github.com/withObsrvr/nebu-processor-registry/processors/token-transfer/proto"
 )
@@ -170,41 +169,20 @@ func convertEvent(sdkEvent *token_transfer.TokenTransferEvent, inSuccessfulTx bo
 func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	ledgerSeq := ledger.LedgerSequence()
 
-	// Build a map of transaction hash -> success status
-	txSuccessMap := make(map[string]bool)
-	reader, err := ingest.NewLedgerTransactionReaderFromLedgerCloseMeta(o.passphrase, ledger)
-	if err != nil {
-		processor.ReportWarning(ctx, o.Name(),
-			fmt.Errorf("ledger %d: create tx reader: %w", ledgerSeq, err))
+	// AllTransactions rather than Transactions, because of what this map is
+	// for. An event whose hash is missing from it falls through to the
+	// `successful := true` default below, so a partial read would not drop
+	// events — it would report failed transfers as successful. Transactions
+	// skips an unreadable transaction and carries on, and that skip is
+	// invisible at a lookup, so the only safe answer to an incomplete read
+	// is to decline the ledger. The problem has already been reported.
+	transactions, ok := ledgerread.AllTransactions(ctx, o.Name(), o.passphrase, ledger)
+	if !ok {
 		return
 	}
-	defer reader.Close()
 
-	for {
-		tx, err := reader.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			// This loop used to break on every error, which reported
-			// nothing at all — where the same loop in contract-invocation
-			// reports a warning. Under nebu's execution policy that is the
-			// difference between a run that records the gap (and halts
-			// under --on-ledger-error strict) and one that looks clean.
-			//
-			// Returning, rather than continuing with a short map, matters
-			// because a transaction missing from the map falls through to
-			// the `successful := true` default below: an incomplete map
-			// would not lose events, it would report failed transfers as
-			// successful. That cannot fire today — the SDK reader's only
-			// non-EOF error is an unknown tx hash, and the token-transfer
-			// processor's own EventsFromLedger trips on the same hash, so
-			// the ledger fails either way — but it is a coincidence of
-			// upstream internals, not a property worth depending on.
-			processor.ReportWarning(ctx, o.Name(),
-				fmt.Errorf("ledger %d: read tx (success map): %w", ledgerSeq, err))
-			return
-		}
+	txSuccessMap := make(map[string]bool, len(transactions))
+	for _, tx := range transactions {
 		txSuccessMap[tx.Result.TransactionHash.HexString()] = tx.Result.Successful()
 	}
 
