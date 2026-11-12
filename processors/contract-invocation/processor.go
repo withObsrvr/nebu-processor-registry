@@ -328,7 +328,7 @@ func (o *Origin) processAuthorizationTree(
 		contractFn := invocation.Function.ContractFn
 
 		var err error
-		contractID, err = EncodeContractID(contractFn.ContractAddress.ContractId)
+		contractID, err = ContractIDFromScAddress(contractFn.ContractAddress)
 		if err != nil {
 			return
 		}
@@ -436,7 +436,7 @@ func (o *Origin) extractStateChangeFromContractData(
 	oldValueRaw, newValueRaw xdr.ScVal,
 	operation string,
 ) *cipb.StateChange {
-	contractID, err := EncodeContractID(contractData.Contract.ContractId)
+	contractID, err := ContractIDFromScAddress(contractData.Contract)
 	if err != nil || contractID == "" {
 		return nil
 	}
@@ -468,7 +468,7 @@ func (o *Origin) extractTtlExtensions(tx ingest.LedgerTransaction) []*cipb.TtlEx
 
 func (o *Origin) extractContractID(tx ingest.LedgerTransaction, invokeHostFunction xdr.InvokeHostFunctionOp) (string, error) {
 	if function := invokeHostFunction.HostFunction; function.Type == xdr.HostFunctionTypeHostFunctionTypeInvokeContract {
-		return EncodeContractID(function.MustInvokeContract().ContractAddress.ContractId)
+		return ContractIDFromScAddress(function.MustInvokeContract().ContractAddress)
 	}
 
 	if contractID, ok := tx.ContractIdFromTxEnvelope(); ok && contractID != "" {

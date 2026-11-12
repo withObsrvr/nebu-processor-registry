@@ -285,12 +285,12 @@ func collectContractCreationState(changes []ingest.Change, contractID string, in
 		}
 
 		entry, operation := contractDataEntryFromChange(change)
-		if entry == nil || entry.Contract.ContractId == nil {
+		if entry == nil {
 			continue
 		}
 
-		entryContractID, err := strkey.Encode(strkey.VersionByteContract, entry.Contract.ContractId[:])
-		if err != nil || entryContractID != contractID {
+		entryContractID, ok := contractIDFromScAddress(entry.Contract)
+		if !ok || entryContractID != contractID {
 			continue
 		}
 
@@ -507,8 +507,8 @@ func extractConstructorFromAuth(auth []xdr.SorobanAuthorizationEntry, contractID
 func findConstructorInvocation(inv xdr.SorobanAuthorizedInvocation, contractID string) (string, []string, bool) {
 	if inv.Function.Type == xdr.SorobanAuthorizedFunctionTypeSorobanAuthorizedFunctionTypeContractFn {
 		fn := inv.Function.MustContractFn()
-		invokedContractID, err := strkey.Encode(strkey.VersionByteContract, fn.ContractAddress.ContractId[:])
-		if err == nil && (contractID == "" || invokedContractID == contractID) {
+		invokedContractID, ok := contractIDFromScAddress(fn.ContractAddress)
+		if ok && (contractID == "" || invokedContractID == contractID) {
 			name := string(fn.FunctionName)
 			if name == "__constructor" {
 				args := make([]string, 0, len(fn.Args))
@@ -566,25 +566,68 @@ func durabilityString(d xdr.ContractDataDurability) string {
 	return "unknown"
 }
 
+// scAddressToString renders any ScAddress arm as its strkey. xdr.ScAddress.String
+// covers every arm the protocol defines — including the CAP-84 muxed contract
+// (W...) and the muxed account (M...) that an account/contract switch dropped
+// silently — and returns an error on an arm it does not know, so the next new
+// variant surfaces as "" rather than as a plausible-looking wrong address.
 func scAddressToString(addr xdr.ScAddress) string {
-	switch addr.Type {
-	case xdr.ScAddressTypeScAddressTypeAccount:
-		return addr.MustAccountId().Address()
-	case xdr.ScAddressTypeScAddressTypeContract:
-		cid := addr.MustContractId()
-		encoded, err := strkey.Encode(strkey.VersionByteContract, cid[:])
-		if err == nil {
-			return encoded
-		}
+	encoded, err := addr.String()
+	if err != nil {
+		return ""
 	}
-	return ""
+	return encoded
 }
 
+// contractIDFromScAddress returns the C-address of the contract an ScAddress
+// designates: the address itself for a plain contract, or the multiplexed
+// contract for a CAP-84 muxed contract address. Use this wherever a contract
+// is being *identified* rather than displayed, so a W-address still matches
+// the C-address of the contract it multiplexes.
+//
+// Reading addr.ContractId directly is what this replaces: each arm of the
+// union populates only its own pointer, so that read is nil on a muxed
+// address — a nil dereference, or a silently skipped record where the nil is
+// guarded.
+func contractIDFromScAddress(addr xdr.ScAddress) (string, bool) {
+	var raw xdr.ContractId
+	switch addr.Type {
+	case xdr.ScAddressTypeScAddressTypeContract:
+		raw = addr.MustContractId()
+	case xdr.ScAddressTypeScAddressTypeMuxedContract:
+		raw = addr.MustMuxedContract().ContractId
+	default:
+		return "", false
+	}
+	encoded, err := strkey.Encode(strkey.VersionByteContract, raw[:])
+	if err != nil {
+		return "", false
+	}
+	return encoded, true
+}
+
+// looksLikeAddress reports whether v is a strkey-encoded address of any kind
+// xdr.ScAddress.String can return. It decodes rather than matching the first
+// character: the prefix test this replaces accepted every string starting
+// with G, C or M, so a token named "My Token" was classified as an address
+// and suppressed NFT constructor detection. Adding the CAP-84 W prefix — plus
+// L and B, which ScAddress.String can also return — would have widened that
+// false positive, so the check is now a checksum-validated decode.
 func looksLikeAddress(v string) bool {
-	if len(v) < 2 {
+	version, _, err := strkey.DecodeAny(v)
+	if err != nil {
 		return false
 	}
-	return strings.HasPrefix(v, "G") || strings.HasPrefix(v, "C") || strings.HasPrefix(v, "M")
+	switch version {
+	case strkey.VersionByteAccountID,
+		strkey.VersionByteMuxedAccount,
+		strkey.VersionByteContract,
+		strkey.VersionByteMuxedContract,
+		strkey.VersionByteLiquidityPool,
+		strkey.VersionByteClaimableBalance:
+		return true
+	}
+	return false
 }
 
 func looksLikeDisplayString(v string) bool {

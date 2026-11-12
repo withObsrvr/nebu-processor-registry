@@ -373,19 +373,16 @@ func convertXdrScValToProto(val xdr.ScVal) *ScVal {
 		}
 		return &ScVal{Value: &ScVal_MapValue{MapValue: &ScMap{Entries: entries}}}
 	case xdr.ScValTypeScvAddress:
-		addr := val.MustAddress()
-		switch addr.Type {
-		case xdr.ScAddressTypeScAddressTypeAccount:
-			accountID := addr.MustAccountId()
-			return &ScVal{Value: &ScVal_AddressValue{AddressValue: accountID.Address()}}
-		case xdr.ScAddressTypeScAddressTypeContract:
-			contractID := addr.MustContractId()
-			encoded, err := strkey.Encode(strkey.VersionByteContract, contractID[:])
-			if err != nil {
-				return &ScVal{Value: &ScVal_VoidValue{VoidValue: &ScVoid{}}}
-			}
-			return &ScVal{Value: &ScVal_AddressValue{AddressValue: encoded}}
+		// xdr.ScAddress.String covers every arm the protocol defines,
+		// including the CAP-84 muxed contract (W...) and the muxed account
+		// (M...) that the previous account/contract switch fell through and
+		// emitted as void. An unknown arm still becomes void rather than a
+		// plausible-looking wrong address.
+		encoded, err := val.MustAddress().String()
+		if err != nil {
+			return &ScVal{Value: &ScVal_VoidValue{VoidValue: &ScVoid{}}}
 		}
+		return &ScVal{Value: &ScVal_AddressValue{AddressValue: encoded}}
 	case xdr.ScValTypeScvLedgerKeyContractInstance:
 		return &ScVal{Value: &ScVal_LedgerKeyValue{LedgerKeyValue: "contract_instance"}}
 	case xdr.ScValTypeScvLedgerKeyNonce:
