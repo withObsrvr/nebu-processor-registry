@@ -4,6 +4,7 @@ package token_transfer
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/stellar/go-stellar-sdk/asset"
 	"github.com/stellar/go-stellar-sdk/ingest"
@@ -182,7 +183,27 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 	for {
 		tx, err := reader.Read()
 		if err != nil {
-			break // End of transactions
+			if err == io.EOF {
+				break
+			}
+			// This loop used to break on every error, which reported
+			// nothing at all — where the same loop in contract-invocation
+			// reports a warning. Under nebu's execution policy that is the
+			// difference between a run that records the gap (and halts
+			// under --on-ledger-error strict) and one that looks clean.
+			//
+			// Returning, rather than continuing with a short map, matters
+			// because a transaction missing from the map falls through to
+			// the `successful := true` default below: an incomplete map
+			// would not lose events, it would report failed transfers as
+			// successful. That cannot fire today — the SDK reader's only
+			// non-EOF error is an unknown tx hash, and the token-transfer
+			// processor's own EventsFromLedger trips on the same hash, so
+			// the ledger fails either way — but it is a coincidence of
+			// upstream internals, not a property worth depending on.
+			processor.ReportWarning(ctx, o.Name(),
+				fmt.Errorf("ledger %d: read tx (success map): %w", ledgerSeq, err))
+			return
 		}
 		txSuccessMap[tx.Result.TransactionHash.HexString()] = tx.Result.Successful()
 	}

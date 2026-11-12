@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -201,7 +202,15 @@ func extractTrades(lcm xdr.LedgerCloseMeta, passphrase string) []tradeEvent {
 	for {
 		tx, err := reader.Read()
 		if err != nil {
-			break
+			if err == io.EOF {
+				break
+			}
+			// Not the end of the ledger: a decode failure here silently
+			// dropped every trade in the transactions that followed it.
+			if !quietMode {
+				fmt.Fprintf(os.Stderr, "Warning: could not read a transaction in ledger %d, trades after it are missing: %v\n", seq, err)
+			}
+			return trades
 		}
 
 		successful := tx.Result.Successful()
