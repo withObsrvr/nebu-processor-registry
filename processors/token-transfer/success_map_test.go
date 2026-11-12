@@ -65,6 +65,11 @@ func TestProcessLedgerDoesNotEmitFromAnIncompleteSuccessMap(t *testing.T) {
 	// from the map falls through to `successful := true`. The result was not
 	// lost data but wrong data: failed transfers reported as successful, with
 	// no warning anywhere.
+	//
+	// The read now goes through ledgerread.AllTransactions, so the wording of
+	// the warning belongs to nebu rather than to this processor. What is
+	// asserted here is what this processor is responsible for: that an
+	// incomplete read is reported, names the ledger, and emits nothing.
 	origin := NewOrigin(testPassphrase)
 	defer origin.Close()
 
@@ -94,8 +99,8 @@ func TestProcessLedgerDoesNotEmitFromAnIncompleteSuccessMap(t *testing.T) {
 
 	require.Len(t, reports, 1, "an unreadable transaction must be reported, not swallowed as EOF")
 	assert.Equal(t, processor.SeverityWarning, reports[0].Severity)
+	assert.Equal(t, origin.Name(), reports[0].Processor)
 	assert.Contains(t, reports[0].Err.Error(), "4242", "the report must name the ledger")
-	assert.Contains(t, reports[0].Err.Error(), "success map")
 }
 
 func TestProcessLedgerReportsNothingForAnEmptyLedger(t *testing.T) {
