@@ -15,6 +15,32 @@ import (
 	"github.com/withObsrvr/nebu/pkg/processor"
 )
 
+// contractIDFromScAddress returns the C-address of the contract an ScAddress
+// designates: the address itself for a plain contract, or the multiplexed
+// contract for a CAP-84 muxed contract address. Use this wherever a contract
+// is being identified rather than displayed, so a W-address still resolves to
+// the contract it multiplexes.
+//
+// Reading addr.ContractId directly is what this replaces: each arm of the
+// union populates only its own pointer, so that read is nil on a muxed
+// address.
+func contractIDFromScAddress(addr xdr.ScAddress) (string, bool) {
+	var raw xdr.ContractId
+	switch addr.Type {
+	case xdr.ScAddressTypeScAddressTypeContract:
+		raw = addr.MustContractId()
+	case xdr.ScAddressTypeScAddressTypeMuxedContract:
+		raw = addr.MustMuxedContract().ContractId
+	default:
+		return "", false
+	}
+	encoded, err := strkey.Encode(strkey.VersionByteContract, raw[:])
+	if err != nil {
+		return "", false
+	}
+	return encoded, true
+}
+
 // Origin is an origin processor that extracts contract data state changes.
 type Origin struct {
 	passphrase string
@@ -148,13 +174,11 @@ func (o *Origin) processContractDataChange(
 		return nil
 	}
 
-	// Extract contract ID
-	contractIDBytes := contractData.Contract.ContractId
-	if contractIDBytes == nil {
-		return nil
-	}
-	contractID, err := strkey.Encode(strkey.VersionByteContract, contractIDBytes[:])
-	if err != nil {
+	// Extract contract ID. Reading Contract.ContractId directly is nil for a
+	// CAP-84 muxed contract address, which the old nil guard turned into a
+	// silently dropped state entry.
+	contractID, ok := contractIDFromScAddress(contractData.Contract)
+	if !ok {
 		return nil
 	}
 

@@ -13,6 +13,32 @@ import (
 	"github.com/withObsrvr/nebu/pkg/processor"
 )
 
+// contractIDFromScAddress returns the C-address of the contract an ScAddress
+// designates: the address itself for a plain contract, or the multiplexed
+// contract for a CAP-84 muxed contract address. Use this wherever a contract
+// is being identified rather than displayed, so a W-address still resolves to
+// the contract it multiplexes.
+//
+// Reading addr.ContractId directly is what this replaces: each arm of the
+// union populates only its own pointer, so that read is nil on a muxed
+// address — a nil dereference where unguarded, a dropped record where not.
+func contractIDFromScAddress(addr xdr.ScAddress) (string, bool) {
+	var raw xdr.ContractId
+	switch addr.Type {
+	case xdr.ScAddressTypeScAddressTypeContract:
+		raw = addr.MustContractId()
+	case xdr.ScAddressTypeScAddressTypeMuxedContract:
+		raw = addr.MustMuxedContract().ContractId
+	default:
+		return "", false
+	}
+	encoded, err := strkey.Encode(strkey.VersionByteContract, raw[:])
+	if err != nil {
+		return "", false
+	}
+	return encoded, true
+}
+
 var nftEventNames = map[string]struct{}{
 	"transfer":        {},
 	"mint":            {},
@@ -292,8 +318,8 @@ func (o *Origin) buildFromInvocation(
 		return nil
 	}
 
-	contractID, err := strkey.Encode(strkey.VersionByteContract, contractFn.ContractAddress.ContractId[:])
-	if err != nil {
+	contractID, ok := contractIDFromScAddress(contractFn.ContractAddress)
+	if !ok {
 		return nil
 	}
 
@@ -407,12 +433,12 @@ func (o *Origin) buildFromContractDataChange(
 		return nil
 	}
 
-	if entry == nil || entry.Contract.ContractId == nil {
+	if entry == nil {
 		return nil
 	}
 
-	contractID, err := strkey.Encode(strkey.VersionByteContract, entry.Contract.ContractId[:])
-	if err != nil {
+	contractID, ok := contractIDFromScAddress(entry.Contract)
+	if !ok {
 		return nil
 	}
 
@@ -768,16 +794,11 @@ func scValToString(val xdr.ScVal) string {
 	case xdr.ScValTypeScvBytes:
 		return fmt.Sprintf("%x", val.MustBytes())
 	case xdr.ScValTypeScvAddress:
-		addr := val.MustAddress()
-		switch addr.Type {
-		case xdr.ScAddressTypeScAddressTypeAccount:
-			return addr.MustAccountId().Address()
-		case xdr.ScAddressTypeScAddressTypeContract:
-			contractID := addr.MustContractId()
-			encoded, err := strkey.Encode(strkey.VersionByteContract, contractID[:])
-			if err == nil {
-				return encoded
-			}
+		// xdr.ScAddress.String covers every arm the protocol defines,
+		// including the CAP-84 muxed contract (W...) and the muxed account
+		// (M...) that the previous account/contract switch fell through.
+		if encoded, err := val.MustAddress().String(); err == nil {
+			return encoded
 		}
 	case xdr.ScValTypeScvTimepoint:
 		return time.Unix(int64(val.MustTimepoint()), 0).UTC().Format(time.RFC3339)

@@ -116,19 +116,15 @@ func ConvertScValToJSON(val xdr.ScVal) (interface{}, error) {
 		return result, nil
 
 	case xdr.ScValTypeScvAddress:
-		address := val.MustAddress()
-		switch address.Type {
-		case xdr.ScAddressTypeScAddressTypeAccount:
-			accountID := address.MustAccountId()
-			return accountID.Address(), nil
-		case xdr.ScAddressTypeScAddressTypeContract:
-			contractID := address.MustContractId()
-			encoded, err := strkey.Encode(strkey.VersionByteContract, contractID[:])
-			if err != nil {
-				return nil, err
-			}
-			return encoded, nil
+		// xdr.ScAddress.String covers every arm the protocol defines,
+		// including the CAP-84 muxed contract (W...) and the muxed account
+		// (M...) that the previous account/contract switch fell through,
+		// yielding a nil value for the argument.
+		encoded, err := val.MustAddress().String()
+		if err != nil {
+			return nil, err
 		}
+		return encoded, nil
 
 	case xdr.ScValTypeScvLedgerKeyContractInstance:
 		return "LedgerKeyContractInstance", nil
@@ -205,6 +201,27 @@ func ExtractArguments(args []xdr.ScVal) []string {
 	}
 
 	return result
+}
+
+// ContractIDFromScAddress returns the C-address of the contract an ScAddress
+// designates: the address itself for a plain contract, or the multiplexed
+// contract for a CAP-84 muxed contract address (W...).
+//
+// Prefer this over handing addr.ContractId to EncodeContractID. Each arm of
+// the ScAddress union populates only its own pointer, so that read is nil for
+// a muxed address and silently produces an empty contract ID.
+//
+// A non-contract arm returns "" with no error, matching EncodeContractID's
+// handling of a nil input, since callers already skip an empty contract ID.
+func ContractIDFromScAddress(addr xdr.ScAddress) (string, error) {
+	switch addr.Type {
+	case xdr.ScAddressTypeScAddressTypeContract:
+		return EncodeContractID(addr.ContractId)
+	case xdr.ScAddressTypeScAddressTypeMuxedContract:
+		muxed := addr.MustMuxedContract()
+		return EncodeContractID(&muxed.ContractId)
+	}
+	return "", nil
 }
 
 func EncodeContractID(contractID *xdr.ContractId) (string, error) {

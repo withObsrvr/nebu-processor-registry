@@ -30,7 +30,6 @@ import (
 	"github.com/stellar/go-stellar-sdk/clients/rpcclient"
 	"github.com/stellar/go-stellar-sdk/network"
 	protocol "github.com/stellar/go-stellar-sdk/protocols/rpc"
-	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/xdr"
 
 	"github.com/withObsrvr/nebu/pkg/processor"
@@ -333,25 +332,15 @@ func extractAddress(val xdr.ScVal) string {
 	if val.Type != xdr.ScValTypeScvAddress {
 		return ""
 	}
-	addr := val.MustAddress()
-	switch addr.Type {
-	case xdr.ScAddressTypeScAddressTypeContract:
-		contractID := addr.MustContractId()
-		encoded, err := strkey.Encode(strkey.VersionByteContract, contractID[:])
-		if err != nil {
-			return ""
-		}
-		return encoded
-	case xdr.ScAddressTypeScAddressTypeAccount:
-		accountID := addr.MustAccountId()
-		raw := accountID.MustEd25519()
-		encoded, err := strkey.Encode(strkey.VersionByteAccountID, raw[:])
-		if err != nil {
-			return ""
-		}
-		return encoded
+	// xdr.ScAddress.String covers every arm the protocol defines, including
+	// the CAP-84 muxed contract (W...) and the muxed account (M...) that the
+	// previous contract/account switch returned "" for. A pool address that
+	// reads as "" is indistinguishable from an absent one downstream.
+	encoded, err := val.MustAddress().String()
+	if err != nil {
+		return ""
 	}
-	return ""
+	return encoded
 }
 
 func normalizeNetwork(s string) string {
