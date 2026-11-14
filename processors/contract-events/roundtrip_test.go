@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stellar/go-stellar-sdk/xdr"
+	"github.com/withObsrvr/nebu/pkg/processor"
 )
 
 // TestScValBase64RoundTrips is the property DATA-9 exists for: a consumer
@@ -66,13 +67,16 @@ func TestScValBase64MatchesObservedOutput(t *testing.T) {
 	}
 }
 
+// The rendering itself is nebu's now, and tested there over all five
+// StellarValueExt arms. What is worth asserting here is that this processor's
+// output did not change shape when it moved onto the shared helper: fixed
+// three decimals and a Z suffix, per DATA-3, uniform width so values sort
+// lexicographically.
 func TestClosedAtRFC3339(t *testing.T) {
-	// Fixed three decimals, Z suffix — DATA-3, and uniform width so values
-	// sort lexicographically.
-	if got, want := closedAtRFC3339(1765158311000), "2025-12-08T01:45:11.000Z"; got != want {
+	if got, want := processor.FormatCloseTimeRFC3339(1765158311000), "2025-12-08T01:45:11.000Z"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
-	if got, want := closedAtRFC3339(1765158311123), "2025-12-08T01:45:11.123Z"; got != want {
+	if got, want := processor.FormatCloseTimeRFC3339(1765158311123), "2025-12-08T01:45:11.123Z"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }

@@ -5,7 +5,7 @@ go 1.26.0
 toolchain go1.26.10
 
 require (
-	github.com/withObsrvr/nebu v0.7.5
+	github.com/withObsrvr/nebu v0.7.7
 	golang.org/x/term v0.46.0
 )
 

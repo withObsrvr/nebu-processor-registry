@@ -6,7 +6,7 @@ toolchain go1.26.10
 
 require (
 	github.com/spf13/cobra v1.10.2
-	github.com/withObsrvr/nebu v0.7.5
+	github.com/withObsrvr/nebu v0.7.7
 	google.golang.org/grpc v1.83.1
 	google.golang.org/protobuf v1.36.11
 )

@@ -7,7 +7,7 @@ toolchain go1.26.10
 require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stellar/go-stellar-sdk v0.8.0
-	github.com/withObsrvr/nebu v0.7.5
+	github.com/withObsrvr/nebu v0.7.7
 )
 
 require (

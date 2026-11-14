@@ -148,7 +148,7 @@ func (o *Origin) processContractInvocation(
 		Meta: &cipb.EventMeta{
 			LedgerSequence:   sequence,
 			ClosedAtUnix:     closeTime.Unix(),
-			ClosedAt:         closeTime.Format("2006-01-02T15:04:05.000Z07:00"),
+			ClosedAt:         processor.FormatCloseTimeRFC3339(closeTime.UnixMilli()),
 			TxHash:           txHash,
 			TransactionIndex: uint32(tx.Index),
 			OperationIndex:   uint32(opIndex),

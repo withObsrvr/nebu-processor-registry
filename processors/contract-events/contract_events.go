@@ -178,7 +178,7 @@ func (p *ContractEventsOriginProto) buildContractEvent(
 	// Build contract event protobuf
 	contractEvent := &ContractEvent{
 		Timestamp:         closeTimeMs / 1000,
-		ClosedAt:          closedAtRFC3339(closeTimeMs),
+		ClosedAt:          processor.FormatCloseTimeRFC3339(closeTimeMs),
 		TopicXdr:          topicXdr,
 		DataXdr:           dataXdr,
 		LedgerSequence:    ledgerSeq,
@@ -420,11 +420,4 @@ func scValBase64(val xdr.ScVal) string {
 		return ""
 	}
 	return base64.StdEncoding.EncodeToString(raw)
-}
-
-// closedAtRFC3339 renders a millisecond Unix timestamp as the RFC 3339 UTC
-// string the closed_at field carries (DATA-3), fixed to three decimal places
-// so values are uniform width and sort lexicographically.
-func closedAtRFC3339(ms int64) string {
-	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }
