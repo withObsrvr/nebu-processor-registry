@@ -6,7 +6,7 @@ toolchain go1.26.10
 
 require (
 	github.com/stellar/go-stellar-sdk v0.8.0
-	github.com/withObsrvr/nebu v0.7.4
+	github.com/withObsrvr/nebu v0.7.5
 	google.golang.org/protobuf v1.36.11
 )
 

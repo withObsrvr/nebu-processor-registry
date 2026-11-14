@@ -4,7 +4,7 @@ go 1.26.0
 
 toolchain go1.26.10
 
-require github.com/withObsrvr/nebu v0.7.4
+require github.com/withObsrvr/nebu v0.7.5
 
 require (
 	cel.dev/expr v0.25.2 // indirect
