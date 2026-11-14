@@ -232,8 +232,8 @@ github.com/valyala/bytebufferpool v1.0.0 h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6Kllzaw
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
 github.com/valyala/fasthttp v1.34.0 h1:d3AAQJ2DRcxJYHm7OXNXtXt2as1vMDfxeIcFvhmGGm4=
 github.com/valyala/fasthttp v1.34.0/go.mod h1:epZA5N+7pY6ZaEKRmstzOuYJx9HI8DI1oaCGZpdH4h0=
-github.com/withObsrvr/nebu v0.7.5 h1:9GOciKWAaYcSgarXWW8DHK6Z7Vgrr4kG6sy8cVYQ0ow=
-github.com/withObsrvr/nebu v0.7.5/go.mod h1:QH4U/f9Ip9zuPWK2ueBmu0sHtqQ9u65u9EAh5vIiCes=
+github.com/withObsrvr/nebu v0.7.7 h1:6sRxP56o7GLz2c511dzM2cdyg0FRDCWK3kfsORc33XQ=
+github.com/withObsrvr/nebu v0.7.7/go.mod h1:QH4U/f9Ip9zuPWK2ueBmu0sHtqQ9u65u9EAh5vIiCes=
 github.com/xdg-go/pbkdf2 v1.0.0 h1:Su7DPu48wXMwC3bs7MCNG+z4FhcyEuz5dlvchbq0B0c=
 github.com/xdg-go/pbkdf2 v1.0.0/go.mod h1:jrpuAogTd400dnrH08LKmI/xc1MbPOebTwRqcT5RDeI=
 github.com/xdg-go/scram v1.1.2 h1:FHX5I5B4i4hKRVRBCFRxq1iQRej7WO3hhBuJf+UUySY=

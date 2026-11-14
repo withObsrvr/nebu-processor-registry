@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/stellar/go-stellar-sdk/strkey"
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -205,7 +204,7 @@ func (c claim) toTrade(sequence uint32, closeTimeMs int64, txHash string, opInde
 	trade := &TradeEvent{
 		LedgerSequence: sequence,
 		TimestampUnix:  closeTimeMs / 1000,
-		Timestamp:      time.UnixMilli(closeTimeMs).UTC().Format("2006-01-02T15:04:05.000Z"),
+		Timestamp:      processor.FormatCloseTimeRFC3339(closeTimeMs),
 		TxHash:         txHash,
 		OpIndex:        opIndex,
 		TradeType:      c.tradeType,

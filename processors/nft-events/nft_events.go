@@ -239,7 +239,7 @@ func (o *Origin) buildFromContractEvent(
 		Meta: &EventMeta{
 			LedgerSequence:   ledgerSeq,
 			ClosedAtUnix:     closeTimeMs / 1000,
-			ClosedAt:         closedAtRFC3339(closeTimeMs),
+			ClosedAt:         processor.FormatCloseTimeRFC3339(closeTimeMs),
 			TxHash:           txHash,
 			TransactionIndex: txIndex,
 			OperationIndex:   opIndex,
@@ -335,7 +335,7 @@ func (o *Origin) buildFromInvocation(
 		Meta: &EventMeta{
 			LedgerSequence:   ledgerSeq,
 			ClosedAtUnix:     closeTimeMs / 1000,
-			ClosedAt:         closedAtRFC3339(closeTimeMs),
+			ClosedAt:         processor.FormatCloseTimeRFC3339(closeTimeMs),
 			TxHash:           txHash,
 			TransactionIndex: txIndex,
 			OperationIndex:   opIndex,
@@ -453,7 +453,7 @@ func (o *Origin) buildFromContractDataChange(
 		Meta: &EventMeta{
 			LedgerSequence:   ledgerSeq,
 			ClosedAtUnix:     closeTimeMs / 1000,
-			ClosedAt:         closedAtRFC3339(closeTimeMs),
+			ClosedAt:         processor.FormatCloseTimeRFC3339(closeTimeMs),
 			TxHash:           txHash,
 			TransactionIndex: txIndex,
 			OperationIndex:   -1,
@@ -804,14 +804,4 @@ func scValToString(val xdr.ScVal) string {
 		return "{" + strings.Join(parts, ",") + "}"
 	}
 	return val.Type.String()
-}
-
-// closedAtRFC3339 renders a millisecond Unix timestamp as the RFC 3339 UTC
-// string the envelope's closed_at field carries (DATA-3).
-//
-// The layout is fixed-width with exactly three decimal places rather than
-// time.RFC3339Nano, which drops trailing zeros: a uniform width keeps values
-// lexicographically sortable and lets a human line them up.
-func closedAtRFC3339(ms int64) string {
-	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }

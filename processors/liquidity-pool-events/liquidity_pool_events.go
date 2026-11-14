@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -122,7 +121,7 @@ func (o *Origin) processDeposit(
 		Meta: &EventMeta{
 			LedgerSequence:   sequence,
 			ClosedAtUnix:     closeTimeMs / 1000,
-			ClosedAt:         closedAtRFC3339(closeTimeMs),
+			ClosedAt:         processor.FormatCloseTimeRFC3339(closeTimeMs),
 			TxHash:           txHash,
 			TransactionIndex: txIndex,
 			OperationIndex:   uint32(opIndex),
@@ -163,7 +162,7 @@ func (o *Origin) processWithdraw(
 		Meta: &EventMeta{
 			LedgerSequence:   sequence,
 			ClosedAtUnix:     closeTimeMs / 1000,
-			ClosedAt:         closedAtRFC3339(closeTimeMs),
+			ClosedAt:         processor.FormatCloseTimeRFC3339(closeTimeMs),
 			TxHash:           txHash,
 			TransactionIndex: txIndex,
 			OperationIndex:   uint32(opIndex),
@@ -241,7 +240,7 @@ func (o *Origin) processPathPaymentTrades(
 			Meta: &EventMeta{
 				LedgerSequence:   sequence,
 				ClosedAtUnix:     closeTimeMs / 1000,
-				ClosedAt:         closedAtRFC3339(closeTimeMs),
+				ClosedAt:         processor.FormatCloseTimeRFC3339(closeTimeMs),
 				TxHash:           txHash,
 				TransactionIndex: txIndex,
 				InSuccessfulTx:   successful,
@@ -371,14 +370,4 @@ func assetToPoolAsset(asset xdr.Asset) *PoolAsset {
 		pa.AssetIssuer = a.Issuer.Address()
 	}
 	return pa
-}
-
-// closedAtRFC3339 renders a millisecond Unix timestamp as the RFC 3339 UTC
-// string the envelope's closed_at field carries (DATA-3).
-//
-// Fixed-width with three decimal places rather than time.RFC3339Nano, which
-// drops trailing zeros: uniform width keeps values lexicographically
-// sortable and lets a human line them up.
-func closedAtRFC3339(ms int64) string {
-	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }

@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"time"
 
 	"github.com/stellar/go-stellar-sdk/ingest"
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -114,7 +113,7 @@ func newChangeAccumulator(sequence uint32, closedAtMs int64) *changeAccumulator 
 		event: &LedgerChangeStats{
 			LedgerSequence: sequence,
 			ClosedAtUnix:   closedAtMs / 1000,
-			ClosedAt:       closedAtRFC3339(closedAtMs),
+			ClosedAt:       processor.FormatCloseTimeRFC3339(closedAtMs),
 		},
 		byType: make(map[xdr.LedgerEntryType]*EntryTypeChangeCounts, len(entryTypeOrder)),
 	}
@@ -304,14 +303,4 @@ func canonicalEntryType(entryType xdr.LedgerEntryType) string {
 	default:
 		return fmt.Sprintf("unknown_%d", int32(entryType))
 	}
-}
-
-// closedAtRFC3339 renders a millisecond Unix timestamp as the RFC 3339 UTC
-// string the envelope's closed_at field carries (DATA-3).
-//
-// Fixed-width with three decimal places rather than time.RFC3339Nano, which
-// drops trailing zeros: uniform width keeps values lexicographically
-// sortable and lets a human line them up.
-func closedAtRFC3339(ms int64) string {
-	return time.UnixMilli(ms).UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }

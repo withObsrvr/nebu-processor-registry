@@ -4,7 +4,6 @@ package token_transfer
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/stellar/go-stellar-sdk/asset"
 	"github.com/stellar/go-stellar-sdk/processors/token_transfer"
@@ -73,17 +72,6 @@ func extractAssetInfo(a *asset.Asset) (assetCode, assetIssuer string) {
 	return "", ""
 }
 
-// closeTimeLayout renders RFC 3339 in UTC with exactly three decimal places.
-// RFC3339Nano drops trailing zeros, which would make the field's shape vary
-// with its value and invite a consumer to read the short form as second
-// resolution.
-//
-// nebu v0.7.7 adds processor.FormatCloseTimeRFC3339, which is this layout owned
-// in one place for every processor; this moves onto it at the next nebu bump.
-// It is inline for now because the correctness fix -- where the value comes
-// from -- should not wait on a release.
-const closeTimeLayout = "2006-01-02T15:04:05.000Z07:00"
-
 // convertEvent converts a Stellar SDK TokenTransferEvent to our proto event,
 // adding the InSuccessfulTx field and the ledger's close time.
 //
@@ -115,7 +103,7 @@ func convertEvent(sdkEvent *token_transfer.TokenTransferEvent, inSuccessfulTx bo
 		// same value the SDK's truncated timestamp gave, so existing
 		// consumers see no change.
 		ClosedAtUnix:     closeTimeMs / 1000,
-		ClosedAt:         time.UnixMilli(closeTimeMs).UTC().Format(closeTimeLayout),
+		ClosedAt:         processor.FormatCloseTimeRFC3339(closeTimeMs),
 		TxHash:           sdkEvent.Meta.TxHash,
 		TransactionIndex: sdkEvent.Meta.TransactionIndex,
 		OperationIndex:   opIndex,
