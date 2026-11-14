@@ -26,6 +26,9 @@ docs:
     # Install the processor
     nebu install soroban-tx-resources
 
+    # The most recent 100 ledgers, with no sequence number to look up
+    soroban-tx-resources --last 100
+
     # Extract a bounded ledger range
     soroban-tx-resources --start-ledger 60200000 --end-ledger 60200100 -q
 

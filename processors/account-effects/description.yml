@@ -26,6 +26,9 @@ docs:
     # Install the processor
     nebu install account-effects
 
+    # The most recent 100 ledgers, with no sequence number to look up
+    account-effects --last 100
+
     # Extract account effects from a ledger range
     account-effects --start-ledger 60200000 --end-ledger 60200100
 

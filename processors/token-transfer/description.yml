@@ -43,6 +43,9 @@ docs:
     # Install the processor
     nebu install token-transfer
 
+    # The most recent 100 ledgers, with no sequence number to look up
+    token-transfer --last 100
+
     # Basic usage - process a ledger range
     token-transfer --start-ledger 60200000 --end-ledger 60200100
 

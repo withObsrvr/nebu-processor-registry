@@ -7,7 +7,7 @@ toolchain go1.26.10
 require (
 	github.com/nats-io/nats.go v1.47.0
 	github.com/spf13/cobra v1.10.2
-	github.com/withObsrvr/nebu v0.7.2
+	github.com/withObsrvr/nebu v0.7.3
 )
 
 require (

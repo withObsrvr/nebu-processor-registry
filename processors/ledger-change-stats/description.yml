@@ -26,6 +26,9 @@ docs:
     # Install the processor
     nebu install ledger-change-stats
 
+    # The most recent 100 ledgers, with no sequence number to look up
+    ledger-change-stats --last 100
+
     # Extract a bounded ledger range
     ledger-change-stats --start-ledger 60200000 --end-ledger 60200100 -q
 

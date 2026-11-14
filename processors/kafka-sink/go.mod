@@ -7,7 +7,7 @@ toolchain go1.26.10
 require (
 	github.com/segmentio/kafka-go v0.4.50
 	github.com/spf13/cobra v1.10.2
-	github.com/withObsrvr/nebu v0.7.2
+	github.com/withObsrvr/nebu v0.7.3
 )
 
 require (

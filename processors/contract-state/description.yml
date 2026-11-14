@@ -26,6 +26,9 @@ docs:
     # Install the processor
     nebu install contract-state
 
+    # The most recent 100 ledgers, with no sequence number to look up
+    contract-state --last 100
+
     # Basic usage - process a ledger range
     contract-state --start-ledger 60200000 --end-ledger 60200100
 
