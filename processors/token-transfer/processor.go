@@ -4,6 +4,7 @@ package token_transfer
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/stellar/go-stellar-sdk/asset"
 	"github.com/stellar/go-stellar-sdk/processors/token_transfer"
@@ -72,9 +73,31 @@ func extractAssetInfo(a *asset.Asset) (assetCode, assetIssuer string) {
 	return "", ""
 }
 
+// closeTimeLayout renders RFC 3339 in UTC with exactly three decimal places.
+// RFC3339Nano drops trailing zeros, which would make the field's shape vary
+// with its value and invite a consumer to read the short form as second
+// resolution.
+//
+// nebu v0.7.7 adds processor.FormatCloseTimeRFC3339, which is this layout owned
+// in one place for every processor; this moves onto it at the next nebu bump.
+// It is inline for now because the correctness fix -- where the value comes
+// from -- should not wait on a release.
+const closeTimeLayout = "2006-01-02T15:04:05.000Z07:00"
+
 // convertEvent converts a Stellar SDK TokenTransferEvent to our proto event,
-// adding the InSuccessfulTx field.
-func convertEvent(sdkEvent *token_transfer.TokenTransferEvent, inSuccessfulTx bool) *ttpb.TokenTransferEvent {
+// adding the InSuccessfulTx field and the ledger's close time.
+//
+// closeTimeMs comes from the ledger rather than from sdkEvent.Meta.ClosedAt.
+// The SDK builds that field as timestamppb.New(tx.Ledger.ClosedAt()), and
+// LedgerCloseMeta.ClosedAt() is time.Unix(LedgerCloseTime(), 0) -- whole
+// seconds. The protobuf Timestamp can carry sub-second precision, which is why
+// reading it looked safe, but the value put into it has already lost it: on
+// testnet ledger 5727700, whose true close time is 1794662144916, the SDK's
+// meta says 1794662144000 and this processor emitted "...44.000Z". Three
+// decimal places of false precision are worse than none, because the proto
+// comment tells consumers to prefer closed_at over closed_at_unix for exactly
+// the ordering CAP-88 breaks.
+func convertEvent(sdkEvent *token_transfer.TokenTransferEvent, inSuccessfulTx bool, closeTimeMs int64) *ttpb.TokenTransferEvent {
 	if sdkEvent == nil || sdkEvent.Meta == nil {
 		return nil
 	}
@@ -88,10 +111,11 @@ func convertEvent(sdkEvent *token_transfer.TokenTransferEvent, inSuccessfulTx bo
 	// Convert metadata
 	meta := &ttpb.EventMeta{
 		LedgerSequence: sdkEvent.Meta.LedgerSequence,
-		ClosedAtUnix:   sdkEvent.Meta.ClosedAt.AsTime().Unix(),
-		// The SDK hands us a protobuf Timestamp, which already carries
-		// sub-second precision, so this does not need the ledger.
-		ClosedAt:         sdkEvent.Meta.ClosedAt.AsTime().UTC().Format("2006-01-02T15:04:05.000Z07:00"),
+		// Seconds, as the field has always meant: closeTimeMs/1000 is the
+		// same value the SDK's truncated timestamp gave, so existing
+		// consumers see no change.
+		ClosedAtUnix:     closeTimeMs / 1000,
+		ClosedAt:         time.UnixMilli(closeTimeMs).UTC().Format(closeTimeLayout),
 		TxHash:           sdkEvent.Meta.TxHash,
 		TransactionIndex: sdkEvent.Meta.TransactionIndex,
 		OperationIndex:   opIndex,
@@ -169,6 +193,11 @@ func convertEvent(sdkEvent *token_transfer.TokenTransferEvent, inSuccessfulTx bo
 func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) {
 	ledgerSeq := ledger.LedgerSequence()
 
+	// Read the close time once, from the ledger, and hand it to every event
+	// built from it. processor.LedgerCloseTimeMs covers both Protocol 30 union
+	// arms and promotes a pre-Protocol-30 whole second.
+	closeTimeMs := processor.LedgerCloseTimeMs(ledger)
+
 	// AllTransactions rather than Transactions, because of what this map is
 	// for. An event whose hash is missing from it falls through to the
 	// `successful := true` default below, so a partial read would not drop
@@ -203,7 +232,7 @@ func (o *Origin) ProcessLedger(ctx context.Context, ledger xdr.LedgerCloseMeta) 
 			}
 		}
 
-		pbEvent := convertEvent(sdkEvent, successful)
+		pbEvent := convertEvent(sdkEvent, successful, closeTimeMs)
 		if pbEvent == nil {
 			continue
 		}
