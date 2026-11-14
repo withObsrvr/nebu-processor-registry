@@ -24,6 +24,13 @@ docs:
     soroswap-pool-indexer -q --start-ledger 50759000 --network mainnet | \
       jq -r .pair_address > soroswap-pools-mainnet.txt
 
+    # Pools created in the most recent ledgers the endpoint still holds
+    # events for. Unlike every other processor's --last, this one is capped
+    # by what getEvents retains -- often a few dozen ledgers -- and asking
+    # for more fails with the window it does have rather than returning a
+    # shorter range.
+    soroswap-pool-indexer --last 40 -q --network mainnet | jq -r .pair_address
+
   examples: |
     # Full historical scan with auth
     NEBU_RPC_AUTH="Api-Key xxx" soroswap-pool-indexer -q \

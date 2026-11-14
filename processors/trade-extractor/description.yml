@@ -20,7 +20,14 @@ docs:
   quick_start: |
     nebu install trade-extractor
 
+    # The most recent 100 ledgers, with no sequence number to look up
+    trade-extractor --last 100 -q | jq .
+
+    # Or an explicit range
     trade-extractor -q --start-ledger 61696585 --end-ledger 61696590 --network mainnet | jq .
+
+    # Or read ledgers from a pipe, which works as of nebu v0.7.5
+    nebu fetch 61696585 61696590 | trade-extractor -q | jq .
 
   examples: |
     # Extract classic DEX trades

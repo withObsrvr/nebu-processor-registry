@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -33,6 +34,8 @@ import (
 	"github.com/stellar/go-stellar-sdk/xdr"
 
 	"github.com/withObsrvr/nebu/pkg/processor"
+	"github.com/withObsrvr/nebu/pkg/source"
+	nebuRPC "github.com/withObsrvr/nebu/pkg/source/rpc"
 )
 
 var version = "0.2.0"
@@ -46,6 +49,7 @@ var (
 	programStatusMode string
 	factoryContract   string
 	pageLimit         uint
+	lastLedgers       uint32
 )
 
 // Known Soroswap factory addresses by network shorthand
@@ -72,6 +76,7 @@ func main() {
 	rootCmd.Flags().StringVar(&programStatusMode, "program-status", programStatusDefault(), "Program status reporting: auto, always, or never")
 	rootCmd.Flags().StringVar(&factoryContract, "factory", "", "Soroswap factory contract address (auto-detected from --network)")
 	rootCmd.Flags().UintVar(&pageLimit, "page-limit", 100, "Events per RPC page request")
+	rootCmd.Flags().Uint32Var(&lastLedgers, "last", 0, "Index the most recent N ledgers instead of an explicit range (or set NEBU_LAST)")
 	rootCmd.Flags().Bool(describeFlagName, false, "Emit machine-readable describe envelope to stdout and exit")
 
 	// Short-circuit into the describe-json protocol before cobra
@@ -111,8 +116,22 @@ func run() error {
 		}
 	}
 
+	if last, err := resolveLastFlag(); err != nil {
+		return err
+	} else if last != 0 {
+		if startLedger != 0 || endLedger != 0 {
+			return fmt.Errorf("--last and an explicit ledger range are mutually exclusive; " +
+				"--last asks the source where the range is")
+		}
+		start, end, err := lastLedgerRange(context.Background(), last)
+		if err != nil {
+			return err
+		}
+		startLedger, endLedger = start, end
+	}
+
 	if startLedger == 0 {
-		return fmt.Errorf("--start-ledger is required")
+		return fmt.Errorf("--start-ledger or --last is required")
 	}
 
 	if !quietMode {
@@ -341,6 +360,83 @@ func extractAddress(val xdr.ScVal) string {
 		return ""
 	}
 	return encoded
+}
+
+// resolveLastFlag reads --last, falling back to NEBU_LAST, the way the shared
+// origin CLI does for every other processor.
+func resolveLastFlag() (uint32, error) {
+	if lastLedgers != 0 {
+		return lastLedgers, nil
+	}
+	raw := os.Getenv("NEBU_LAST")
+	if raw == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.ParseUint(raw, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("NEBU_LAST=%q is not a ledger count: %w", raw, err)
+	}
+	return uint32(parsed), nil
+}
+
+// lastLedgerRange turns a count of ledgers into the range the source can
+// serve, through the same window types and the same arithmetic the other
+// processors use, so "the last 100 ledgers" cannot come to mean something
+// different here. This processor reads events from the getEvents RPC rather
+// than ledgers from a stream, so it cannot use the shared origin CLI that
+// would otherwise provide this; it can still agree with it.
+func lastLedgerRange(ctx context.Context, last uint32) (uint32, uint32, error) {
+	var (
+		src *nebuRPC.LedgerSource
+		err error
+	)
+	if authHeader := os.Getenv("NEBU_RPC_AUTH"); authHeader != "" {
+		src, err = nebuRPC.NewLedgerSourceWithHeaders(rpcURL, map[string]string{"Authorization": authHeader})
+	} else {
+		src, err = nebuRPC.NewLedgerSource(rpcURL)
+	}
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to create RPC source: %w", err)
+	}
+	defer func() {
+		// Close releases nothing for a source that never streamed, but the
+		// contract allows calling it and ignoring a nil error.
+		_ = src.Close()
+	}()
+
+	window, err := src.LedgerWindow(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("could not ask %s for its ledger range: %w", rpcURL, err)
+	}
+
+	start, end, err := source.ResolveLast(window, last)
+	if err != nil {
+		return 0, 0, fmt.Errorf("%w (the source reports ledgers %s)", err, window)
+	}
+
+	// Here the reported window is a hard limit, which is the opposite of the
+	// ledger-streaming case: nebu treats a request below the reported oldest
+	// as a note and proceeds, because an archive-backed endpoint reports a
+	// window of its last few dozen ledgers and then serves history millions
+	// deep. getEvents does not. Asked for a start below its window it
+	// answers
+	//
+	//	[-32600] startLedger must be within the ledger range: 65473982 - 65474045
+	//
+	// so proceeding would guarantee a failure with a worse message than this
+	// one. Refusing rather than clamping keeps the promise --last makes
+	// everywhere else: it never returns fewer ledgers than asked.
+	if !window.Covers(start) {
+		retained := window.Latest - window.Oldest + 1
+		return 0, 0, fmt.Errorf(
+			"--last %d needs ledgers %d-%d, but getEvents on %s only retains %s (%d ledgers); "+
+				"ask for at most %d, or use an endpoint with deeper event retention",
+			last, start, end, rpcURL, window, retained, retained)
+	}
+
+	fmt.Fprintf(os.Stderr, "Resolved --last %d to ledgers %d-%d (source reports %s)\n",
+		last, start, end, window)
+	return start, end, nil
 }
 
 func normalizeNetwork(s string) string {

@@ -14,9 +14,11 @@ This document defines the JSON output schema for the trade-extractor origin proc
 ```json
 {
   "_schema": "nebu.dex_trade.v1",
-  "_nebu_version": "0.1.0",
-  "ledger_sequence": 61696585,
-  "timestamp_unix": 1773771107,
+  "_nebu_version": "v0.7.5",
+  "network": "pubnet",
+  "ledger_sequence": 61696300,
+  "timestamp_unix": 1773769469,
+  "timestamp": "2026-03-17T17:44:29.000Z",
   "tx_hash": "1394685a...",
   "operation_index": 0,
   "trade_type": "orderbook",
@@ -37,9 +39,11 @@ This document defines the JSON output schema for the trade-extractor origin proc
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `_schema` | string | Yes | `"nebu.dex_trade.v1"` |
-| `_nebu_version` | string | Yes | Processor version |
+| `_nebu_version` | string | Yes | The nebu release the processor was built against. Until v0.7.5 this field carried the *processor's* own version instead, so events reported `"0.1.0"`; the envelope is now written in one place by the shared CLI, for every processor alike. |
+| `network` | string | Yes | `"pubnet"` or `"testnet"`, derived from the ledger data rather than the `--network` flag. Added in v0.7.5 with the move to the shared origin CLI. |
 | `ledger_sequence` | number | Yes | Stellar ledger sequence |
 | `timestamp_unix` | number | Yes | Ledger close time (Unix seconds) |
+| `timestamp` | string | Yes | Ledger close time at the resolution Protocol 30 records it (RFC 3339, milliseconds). Added in v0.7.5: whole seconds cannot order two trades in the same ledger, and trades are exactly the events whose order matters. |
 | `tx_hash` | string | Yes | Transaction hash |
 | `operation_index` | number | Yes | Operation index within the transaction |
 | `trade_type` | string | Yes | `"orderbook"`, `"path_payment"`, or `"liquidity_pool"` |

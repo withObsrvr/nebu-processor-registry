@@ -2,7 +2,7 @@
 set -euo pipefail
 
 expected_sdk="${EXPECTED_STELLAR_SDK_VERSION:-v0.8.0}"
-expected_nebu="${EXPECTED_NEBU_VERSION:-v0.7.4}"
+expected_nebu="${EXPECTED_NEBU_VERSION:-v0.7.5}"
 failed=0
 
 for mod in processors/*/go.mod; do
