@@ -28,6 +28,9 @@ docs:
     # Install the processor
     nebu install contract-invocation
 
+    # The most recent 100 ledgers, with no sequence number to look up
+    contract-invocation --last 100
+
     # Basic usage - process a ledger range
     contract-invocation --start-ledger 60200000 --end-ledger 60200100
 

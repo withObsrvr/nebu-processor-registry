@@ -25,6 +25,9 @@ docs:
   quick_start: |
     nebu install nft-events
 
+    # The most recent 100 ledgers, with no sequence number to look up
+    nft-events --last 100
+
     # bounded range
     nft-events --start-ledger 60200000 --end-ledger 60200100
 

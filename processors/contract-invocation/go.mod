@@ -6,7 +6,8 @@ toolchain go1.26.10
 
 require (
 	github.com/stellar/go-stellar-sdk v0.8.0
-	github.com/withObsrvr/nebu v0.7.2
+	github.com/stretchr/testify v1.11.1
+	github.com/withObsrvr/nebu v0.7.3
 	google.golang.org/grpc v1.83.1
 	google.golang.org/protobuf v1.36.11
 )
@@ -83,7 +84,6 @@ require (
 	github.com/spiffe/go-spiffe/v2 v2.7.0 // indirect
 	github.com/stellar/go-xdr v0.0.0-20260806060815-dc590f17552a // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.44.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.67.0 // indirect
