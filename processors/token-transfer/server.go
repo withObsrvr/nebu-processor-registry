@@ -156,8 +156,18 @@ func simplifyEvent(ev *ttpb.TokenTransferEvent) Event {
 		case *ttpb.MuxedInfo_Text:
 			event.ToMuxedInfo = map[string]any{"text": content.Text}
 		case *ttpb.MuxedInfo_Id:
-			event.ToMuxedInfo = map[string]any{"id": content.Id}
+			// A string, not a number, because the id is a uint64 and these
+			// are routinely large: proto3's own JSON mapping renders 64-bit
+			// integers as strings for exactly this reason, so the NDJSON
+			// output already emits "775078096". Writing a bare number here
+			// would have the two outputs disagree on the field's type, and
+			// JavaScript's JSON.parse turns a large one into a different
+			// number without complaining -- 18446744073709551615 reads back
+			// as 18446744073709552000.
+			event.ToMuxedInfo = map[string]any{"id": strconv.FormatUint(content.Id, 10)}
 		case *ttpb.MuxedInfo_Hash:
+			// Base64 in JSON, which is what encoding/json does with a
+			// []byte and what proto3 JSON does with bytes.
 			event.ToMuxedInfo = map[string]any{"hash": content.Hash}
 		}
 	}

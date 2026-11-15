@@ -96,7 +96,7 @@ Every event includes these base fields:
 | `type` | string | Yes | Event type: `"transfer"`, `"mint"`, `"burn"`, `"clawback"`, or `"fee"` |
 | `contract_address` | string | No | Smart contract address (if applicable) |
 | `asset` | object | No | Asset information (see Asset Object below) |
-| `to_muxed_info` | object | No | CAP-67 destination routing information |
+| `to_muxed_info` | object | No | CAP-67 destination routing: exactly one of `id` (string, a uint64 that crosses as a string so large values survive JavaScript's `JSON.parse`), `text` (string), or `hash` (base64). **It usually comes from the transaction memo**, not from a muxed account address — the SDK builds it with `NewMuxedInfoFromMemo`, mapping `MEMO_ID` to `id`, `MEMO_TEXT` to `text`, and `MEMO_HASH`/`MEMO_RETURN` to `hash`. On pubnet ledger 65447235, 101 of 601 events carried one and all 101 were memos. Both answer "which sub-account is this for?", so read it as routing metadata rather than as proof the destination was an `M…` address |
 
 ### Asset Object
 
