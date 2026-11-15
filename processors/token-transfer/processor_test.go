@@ -7,6 +7,7 @@ import (
 
 	"github.com/stellar/go-stellar-sdk/network"
 	"github.com/stellar/go-stellar-sdk/processors/token_transfer"
+	"github.com/stellar/go-stellar-sdk/xdr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/withObsrvr/nebu/pkg/runtime"
@@ -158,4 +159,46 @@ func TestConvertEventCloseTimeRendersThreeDigits(t *testing.T) {
 		require.NotNil(t, event)
 		assert.Regexp(t, `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$`, event.Meta.ClosedAt)
 	}
+}
+
+func TestConvertEventPreservesSDKMetadata(t *testing.T) {
+	opIndex := uint32(4)
+	sdkEvent := token_transfer.NewTransferEvent(
+		&token_transfer.EventMeta{
+			LedgerSequence:   123,
+			TxHash:           "hash",
+			TransactionIndex: 7,
+			OperationIndex:   &opIndex,
+			ContractAddress:  "CASAC",
+			ToMuxedInfo:      token_transfer.NewMuxedInfoFromId(99),
+		},
+		"GFROM", "GTO", "100", nil,
+	)
+
+	// Replace the nil asset with native XLM through the SDK's normal setter.
+	sdkEvent.SetAsset(xdr.MustNewNativeAsset())
+	event := convertEvent(sdkEvent, true, 1700000000123)
+	require.NotNil(t, event)
+
+	assert.Equal(t, uint32(4), *event.Meta.OperationIndexValue)
+	assert.Equal(t, uint32(4), event.Meta.OperationIndex)
+	assert.Equal(t, "CASAC", event.Meta.ContractAddress)
+	assert.Equal(t, uint64(99), event.Meta.ToMuxedInfo.GetId())
+	assert.Equal(t, "native", event.GetTransfer().AssetType)
+	assert.Equal(t, "XLM", event.GetTransfer().AssetCode)
+}
+
+func TestConvertEventPreservesAbsentOperationIndex(t *testing.T) {
+	sdkEvent := &token_transfer.TokenTransferEvent{
+		Meta: &token_transfer.EventMeta{TxHash: "fee"},
+		Event: &token_transfer.TokenTransferEvent_Fee{
+			Fee: &token_transfer.Fee{From: "GACCOUNT", Amount: "100"},
+		},
+	}
+
+	event := convertEvent(sdkEvent, false, 1700000000000)
+	require.NotNil(t, event)
+	assert.Nil(t, event.Meta.OperationIndexValue)
+	assert.Equal(t, uint32(0), event.Meta.OperationIndex)
+	assert.False(t, event.Meta.InSuccessfulTx)
 }

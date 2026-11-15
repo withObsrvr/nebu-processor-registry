@@ -121,32 +121,56 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // Event is a simplified representation of a token transfer event for JSON serialization.
 type Event struct {
-	Type            string            `json:"type"`
-	LedgerSequence  uint32            `json:"ledger_sequence"`
-	TxHash          string            `json:"tx_hash"`
-	ContractAddress string            `json:"contract_address,omitempty"`
-	InSuccessfulTx  bool              `json:"in_successful_tx"`
-	From            string            `json:"from,omitempty"`
-	To              string            `json:"to,omitempty"`
-	Amount          string            `json:"amount"`
-	Asset           map[string]string `json:"asset,omitempty"`
+	Type             string            `json:"type"`
+	LedgerSequence   uint32            `json:"ledger_sequence"`
+	ClosedAtUnix     int64             `json:"closed_at_unix"`
+	ClosedAt         string            `json:"closed_at,omitempty"`
+	TxHash           string            `json:"tx_hash"`
+	TransactionIndex uint32            `json:"transaction_index"`
+	OperationIndex   *uint32           `json:"operation_index,omitempty"`
+	ContractAddress  string            `json:"contract_address,omitempty"`
+	InSuccessfulTx   bool              `json:"in_successful_tx"`
+	From             string            `json:"from,omitempty"`
+	To               string            `json:"to,omitempty"`
+	Amount           string            `json:"amount"`
+	Asset            map[string]string `json:"asset,omitempty"`
+	ToMuxedInfo      map[string]any    `json:"to_muxed_info,omitempty"`
 }
 
 // simplifyEvent converts a TokenTransferEvent protobuf to a JSON-friendly structure.
 func simplifyEvent(ev *ttpb.TokenTransferEvent) Event {
 	event := Event{
-		LedgerSequence:  ev.Meta.LedgerSequence,
-		TxHash:          ev.Meta.TxHash,
-		ContractAddress: ev.Meta.ContractAddress,
-		InSuccessfulTx:  ev.Meta.InSuccessfulTx,
+		LedgerSequence:   ev.Meta.LedgerSequence,
+		ClosedAtUnix:     ev.Meta.ClosedAtUnix,
+		ClosedAt:         ev.Meta.ClosedAt,
+		TxHash:           ev.Meta.TxHash,
+		TransactionIndex: ev.Meta.TransactionIndex,
+		ContractAddress:  ev.Meta.ContractAddress,
+		InSuccessfulTx:   ev.Meta.InSuccessfulTx,
+	}
+	if ev.Meta.OperationIndexValue != nil {
+		event.OperationIndex = ev.Meta.OperationIndexValue
+	}
+	if info := ev.Meta.ToMuxedInfo; info != nil {
+		switch content := info.Content.(type) {
+		case *ttpb.MuxedInfo_Text:
+			event.ToMuxedInfo = map[string]any{"text": content.Text}
+		case *ttpb.MuxedInfo_Id:
+			event.ToMuxedInfo = map[string]any{"id": content.Id}
+		case *ttpb.MuxedInfo_Hash:
+			event.ToMuxedInfo = map[string]any{"hash": content.Hash}
+		}
 	}
 
 	// Helper to build asset map
-	buildAsset := func(assetCode, assetIssuer string) map[string]string {
+	buildAsset := func(assetType, assetCode, assetIssuer string) map[string]string {
 		if assetCode == "" && assetIssuer == "" {
 			return nil
 		}
 		asset := make(map[string]string)
+		if assetType != "" {
+			asset["type"] = assetType
+		}
 		if assetCode == "XLM" {
 			asset["code"] = "native"
 		} else if assetCode != "" {
@@ -165,31 +189,31 @@ func simplifyEvent(ev *ttpb.TokenTransferEvent) Event {
 		event.From = e.Transfer.From
 		event.To = e.Transfer.To
 		event.Amount = e.Transfer.Amount
-		event.Asset = buildAsset(e.Transfer.AssetCode, e.Transfer.AssetIssuer)
+		event.Asset = buildAsset(e.Transfer.AssetType, e.Transfer.AssetCode, e.Transfer.AssetIssuer)
 
 	case *ttpb.TokenTransferEvent_Mint:
 		event.Type = "mint"
 		event.To = e.Mint.To
 		event.Amount = e.Mint.Amount
-		event.Asset = buildAsset(e.Mint.AssetCode, e.Mint.AssetIssuer)
+		event.Asset = buildAsset(e.Mint.AssetType, e.Mint.AssetCode, e.Mint.AssetIssuer)
 
 	case *ttpb.TokenTransferEvent_Burn:
 		event.Type = "burn"
 		event.From = e.Burn.From
 		event.Amount = e.Burn.Amount
-		event.Asset = buildAsset(e.Burn.AssetCode, e.Burn.AssetIssuer)
+		event.Asset = buildAsset(e.Burn.AssetType, e.Burn.AssetCode, e.Burn.AssetIssuer)
 
 	case *ttpb.TokenTransferEvent_Clawback:
 		event.Type = "clawback"
 		event.From = e.Clawback.From
 		event.Amount = e.Clawback.Amount
-		event.Asset = buildAsset(e.Clawback.AssetCode, e.Clawback.AssetIssuer)
+		event.Asset = buildAsset(e.Clawback.AssetType, e.Clawback.AssetCode, e.Clawback.AssetIssuer)
 
 	case *ttpb.TokenTransferEvent_Fee:
 		event.Type = "fee"
 		event.From = e.Fee.From
 		event.Amount = e.Fee.Amount
-		event.Asset = buildAsset(e.Fee.AssetCode, e.Fee.AssetIssuer)
+		event.Asset = buildAsset(e.Fee.AssetType, e.Fee.AssetCode, e.Fee.AssetIssuer)
 
 	default:
 		event.Type = "unknown"

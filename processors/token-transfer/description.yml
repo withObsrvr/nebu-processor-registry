@@ -116,11 +116,18 @@ docs:
     | `txHash` | string | Transaction identifier (hex-encoded) |
     | `transactionIndex` | uint32 | Position of transaction within ledger |
     | `operationIndex` | uint32 | Position of operation within transaction (null for tx-level events) |
+    | `operationIndexValue` | uint32? | Presence-preserving SDK operation index |
+    | `toMuxedInfo` | object | CAP-67 destination routing metadata, when present |
+    | `inSuccessfulTx` | bool | Whether the originating transaction succeeded |
     | `timestamp` | string | Ledger close time (ISO 8601 format) |
 
     ---
 
     ## Proto Schema
+
+    The protobuf output retains the legacy flattened asset fields for compatibility
+    and adds `asset_type`, `to_muxed_info`, and `operation_index_value` so SDK
+    metadata is not lost. The HTTP JSON output exposes the same information.
 
     ```protobuf
     message TokenTransferEvent {

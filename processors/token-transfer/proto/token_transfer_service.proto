@@ -44,6 +44,22 @@ message EventMeta {
   uint32 operation_index = 5;
   string contract_address = 6;
   bool in_successful_tx = 7;
+
+  // Lossless SDK representation. operation_index remains for compatibility;
+  // this field preserves the distinction between absent and zero.
+  optional uint32 operation_index_value = 9;
+  MuxedInfo to_muxed_info = 10;
+}
+
+// MuxedInfo is the CAP-67 destination routing information emitted by the
+// Stellar token-transfer processor. It may come from an M-address or a
+// transaction memo.
+message MuxedInfo {
+  oneof content {
+    string text = 1;
+    uint64 id = 2;
+    bytes hash = 3;
+  }
 }
 
 message Transfer {
@@ -52,6 +68,7 @@ message Transfer {
   string asset_code = 3;
   string asset_issuer = 4;
   string amount = 5;
+  string asset_type = 6;
 }
 
 message Mint {
@@ -59,6 +76,7 @@ message Mint {
   string asset_code = 2;
   string asset_issuer = 3;
   string amount = 4;
+  string asset_type = 5;
 }
 
 message Burn {
@@ -66,6 +84,7 @@ message Burn {
   string asset_code = 2;
   string asset_issuer = 3;
   string amount = 4;
+  string asset_type = 5;
 }
 
 message Clawback {
@@ -73,6 +92,7 @@ message Clawback {
   string asset_code = 2;
   string asset_issuer = 3;
   string amount = 4;
+  string asset_type = 5;
 }
 
 message Fee {
@@ -80,6 +100,7 @@ message Fee {
   string asset_code = 2;
   string asset_issuer = 3;
   string amount = 4;
+  string asset_type = 5;
 }
 
 // TokenTransferService streams token transfer events from Stellar ledgers.
