@@ -54,22 +54,39 @@ func (o *Origin) Close() {
 }
 
 // extractAssetInfo extracts asset code and issuer from Stellar SDK Asset
-func extractAssetInfo(a *asset.Asset) (assetCode, assetIssuer string) {
+func extractAssetInfo(a *asset.Asset) (assetType, assetCode, assetIssuer string) {
 	if a == nil {
-		return "", ""
+		return "", "", ""
 	}
 
 	// Check if it's a native asset (XLM)
 	if a.GetNative() {
-		return "XLM", ""
+		return "native", "XLM", ""
 	}
 
 	// Otherwise it's an issued asset
 	if issuedAsset := a.GetIssuedAsset(); issuedAsset != nil {
-		return issuedAsset.GetAssetCode(), issuedAsset.GetIssuer()
+		return "issued", issuedAsset.GetAssetCode(), issuedAsset.GetIssuer()
 	}
 
-	return "", ""
+	return "", "", ""
+}
+
+func convertMuxedInfo(info *token_transfer.MuxedInfo) *ttpb.MuxedInfo {
+	if info == nil {
+		return nil
+	}
+
+	switch content := info.Content.(type) {
+	case *token_transfer.MuxedInfo_Text:
+		return &ttpb.MuxedInfo{Content: &ttpb.MuxedInfo_Text{Text: content.Text}}
+	case *token_transfer.MuxedInfo_Id:
+		return &ttpb.MuxedInfo{Content: &ttpb.MuxedInfo_Id{Id: content.Id}}
+	case *token_transfer.MuxedInfo_Hash:
+		return &ttpb.MuxedInfo{Content: &ttpb.MuxedInfo_Hash{Hash: append([]byte(nil), content.Hash...)}}
+	default:
+		return nil
+	}
 }
 
 // convertEvent converts a Stellar SDK TokenTransferEvent to our proto event,
@@ -91,9 +108,11 @@ func convertEvent(sdkEvent *token_transfer.TokenTransferEvent, inSuccessfulTx bo
 	}
 
 	// Convert operation index (handle optional field)
-	opIndex := uint32(0)
+	var opIndex uint32
+	var opIndexValue *uint32
 	if sdkEvent.Meta.OperationIndex != nil {
 		opIndex = *sdkEvent.Meta.OperationIndex
+		opIndexValue = &opIndex
 	}
 
 	// Convert metadata
@@ -102,13 +121,15 @@ func convertEvent(sdkEvent *token_transfer.TokenTransferEvent, inSuccessfulTx bo
 		// Seconds, as the field has always meant: closeTimeMs/1000 is the
 		// same value the SDK's truncated timestamp gave, so existing
 		// consumers see no change.
-		ClosedAtUnix:     closeTimeMs / 1000,
-		ClosedAt:         processor.FormatCloseTimeRFC3339(closeTimeMs),
-		TxHash:           sdkEvent.Meta.TxHash,
-		TransactionIndex: sdkEvent.Meta.TransactionIndex,
-		OperationIndex:   opIndex,
-		ContractAddress:  sdkEvent.Meta.ContractAddress,
-		InSuccessfulTx:   inSuccessfulTx,
+		ClosedAtUnix:        closeTimeMs / 1000,
+		ClosedAt:            processor.FormatCloseTimeRFC3339(closeTimeMs),
+		TxHash:              sdkEvent.Meta.TxHash,
+		TransactionIndex:    sdkEvent.Meta.TransactionIndex,
+		OperationIndex:      opIndex,
+		OperationIndexValue: opIndexValue,
+		ContractAddress:     sdkEvent.Meta.ContractAddress,
+		ToMuxedInfo:         convertMuxedInfo(sdkEvent.Meta.ToMuxedInfo),
+		InSuccessfulTx:      inSuccessfulTx,
 	}
 
 	// Create our proto event
@@ -119,7 +140,7 @@ func convertEvent(sdkEvent *token_transfer.TokenTransferEvent, inSuccessfulTx bo
 	// Convert event type
 	switch ev := sdkEvent.Event.(type) {
 	case *token_transfer.TokenTransferEvent_Transfer:
-		assetCode, assetIssuer := extractAssetInfo(ev.Transfer.Asset)
+		assetType, assetCode, assetIssuer := extractAssetInfo(ev.Transfer.Asset)
 		pbEvent.Event = &ttpb.TokenTransferEvent_Transfer{
 			Transfer: &ttpb.Transfer{
 				From:        ev.Transfer.From,
@@ -127,46 +148,51 @@ func convertEvent(sdkEvent *token_transfer.TokenTransferEvent, inSuccessfulTx bo
 				AssetCode:   assetCode,
 				AssetIssuer: assetIssuer,
 				Amount:      ev.Transfer.Amount,
+				AssetType:   assetType,
 			},
 		}
 	case *token_transfer.TokenTransferEvent_Mint:
-		assetCode, assetIssuer := extractAssetInfo(ev.Mint.Asset)
+		assetType, assetCode, assetIssuer := extractAssetInfo(ev.Mint.Asset)
 		pbEvent.Event = &ttpb.TokenTransferEvent_Mint{
 			Mint: &ttpb.Mint{
 				To:          ev.Mint.To,
 				AssetCode:   assetCode,
 				AssetIssuer: assetIssuer,
 				Amount:      ev.Mint.Amount,
+				AssetType:   assetType,
 			},
 		}
 	case *token_transfer.TokenTransferEvent_Burn:
-		assetCode, assetIssuer := extractAssetInfo(ev.Burn.Asset)
+		assetType, assetCode, assetIssuer := extractAssetInfo(ev.Burn.Asset)
 		pbEvent.Event = &ttpb.TokenTransferEvent_Burn{
 			Burn: &ttpb.Burn{
 				From:        ev.Burn.From,
 				AssetCode:   assetCode,
 				AssetIssuer: assetIssuer,
 				Amount:      ev.Burn.Amount,
+				AssetType:   assetType,
 			},
 		}
 	case *token_transfer.TokenTransferEvent_Clawback:
-		assetCode, assetIssuer := extractAssetInfo(ev.Clawback.Asset)
+		assetType, assetCode, assetIssuer := extractAssetInfo(ev.Clawback.Asset)
 		pbEvent.Event = &ttpb.TokenTransferEvent_Clawback{
 			Clawback: &ttpb.Clawback{
 				From:        ev.Clawback.From,
 				AssetCode:   assetCode,
 				AssetIssuer: assetIssuer,
 				Amount:      ev.Clawback.Amount,
+				AssetType:   assetType,
 			},
 		}
 	case *token_transfer.TokenTransferEvent_Fee:
-		assetCode, assetIssuer := extractAssetInfo(ev.Fee.Asset)
+		assetType, assetCode, assetIssuer := extractAssetInfo(ev.Fee.Asset)
 		pbEvent.Event = &ttpb.TokenTransferEvent_Fee{
 			Fee: &ttpb.Fee{
 				From:        ev.Fee.From,
 				AssetCode:   assetCode,
 				AssetIssuer: assetIssuer,
 				Amount:      ev.Fee.Amount,
+				AssetType:   assetType,
 			},
 		}
 	}

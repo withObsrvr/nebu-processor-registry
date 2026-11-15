@@ -19,6 +19,13 @@ This document defines the JSON output schema for the token-transfer origin proce
 - Base fields: `ledger_sequence`, `tx_hash`, `type`
 - Optional fields: `contract_address`, `asset`
 - Type-specific fields: `from`, `to`, `amount`
+- Protobuf output additionally preserves SDK `to_muxed_info`, optional operation-index presence, and asset type.
+
+### Fidelity additions (2026-11-15)
+- Added SDK-compatible muxed destination metadata: `to_muxed_info.id`, `text`, or `hash`.
+- Added `operation_index_value` to preserve the distinction between an absent operation index and zero.
+- Added `asset.type` in HTTP JSON (`native` or `issued`).
+- Existing `operation_index` and flattened asset fields remain for compatibility.
 
 ---
 
@@ -89,6 +96,7 @@ Every event includes these base fields:
 | `type` | string | Yes | Event type: `"transfer"`, `"mint"`, `"burn"`, `"clawback"`, or `"fee"` |
 | `contract_address` | string | No | Smart contract address (if applicable) |
 | `asset` | object | No | Asset information (see Asset Object below) |
+| `to_muxed_info` | object | No | CAP-67 destination routing: exactly one of `id` (string, a uint64 that crosses as a string so large values survive JavaScript's `JSON.parse`), `text` (string), or `hash` (base64). **It usually comes from the transaction memo**, not from a muxed account address — the SDK builds it with `NewMuxedInfoFromMemo`, mapping `MEMO_ID` to `id`, `MEMO_TEXT` to `text`, and `MEMO_HASH`/`MEMO_RETURN` to `hash`. On pubnet ledger 65447235, 101 of 601 events carried one and all 101 were memos. Both answer "which sub-account is this for?", so read it as routing metadata rather than as proof the destination was an `M…` address |
 
 ### Asset Object
 
@@ -103,6 +111,7 @@ When present, the `asset` field has this structure:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `type` | string | Yes | `native` or `issued` |
 | `code` | string | Yes | Asset code (e.g., `"USDC"`, `"XLM"`) or `"native"` for native XLM |
 | `issuer` | string | No | Asset issuer address (omitted for native XLM) |
 
