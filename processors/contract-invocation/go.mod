@@ -5,10 +5,10 @@ go 1.26.0
 toolchain go1.26.10
 
 require (
-	github.com/stellar/go-stellar-sdk v0.8.0
+	github.com/stellar/go-stellar-sdk v0.9.0
 	github.com/stretchr/testify v1.11.1
-	github.com/withObsrvr/nebu v0.7.9
-	google.golang.org/grpc v1.83.1
+	github.com/withObsrvr/nebu v0.7.11
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.11
 )
 
